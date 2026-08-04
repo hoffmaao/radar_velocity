@@ -42,9 +42,12 @@ function [s_sec, info] = coalignPair(s_ref, s_sec, map, opts)
 %
 %   map fields: .Time (Nt x 1) [s], .Surface (1 x Nx) [s], .fc [Hz]
 %   opts fields (defaults in opr_vvel/vvel_defaults.m):
-%     .coalign_max_lag    largest credible shift [bins]; a larger estimate
-%                         is rejected as a failed measurement
-%     .coalign_half_win   half-width of the surface window [bins]
+%     .coalign_max_lag      largest credible shift [bins]; a larger
+%                           estimate is rejected as a failed measurement
+%     .coalign_half_win     half-width of the surface window [bins]
+%     .coalign_min_quality  minimum info.quality for the estimate to be
+%                           applied; below it the measurement is rejected
+%                           as noise and the pair is left unaligned
 %
 %   Returns:
 %     s_sec            the secondary, advanced by the measured delay
@@ -53,7 +56,8 @@ function [s_sec, info] = coalignPair(s_ref, s_sec, map, opts)
 %                      [0..1]; low values mean the estimate is noise
 %     info.applied     false when no reliable estimate was possible; the
 %                      secondary is then returned unchanged and dtau_bulk
-%                      is NaN
+%                      is NaN. A quality-floor rejection still reports the
+%                      measured quality so the product records why.
 %
 %   SIGN. Positive dtau_bulk means the secondary's returns arrive LATER
 %   than the reference's. In the matched-filter convention a delay tau
@@ -70,6 +74,7 @@ Nt = size(s_ref, 1);
 dt = Time(2) - Time(1);
 maxlag  = max(1, round(opts.coalign_max_lag));
 halfwin = max(4, round(opts.coalign_half_win));
+minq    = opts.coalign_min_quality;
 
 sfc = mean(map.Surface, 'omitnan');
 if ~isfinite(sfc)
@@ -121,6 +126,12 @@ quality = abs(q) / max(sum(abs(pp(keep))), eps);
 
 if ~isfinite(dtau)
   warning('coalignPair: group delay estimate is not finite; pair left unaligned.');
+  return;
+end
+if quality < minq
+  warning('coalignPair: cross-spectrum quality %.2f is below the %.2f floor; pair left unaligned.', ...
+    quality, minq);
+  info.quality = quality;
   return;
 end
 if abs(dtau) > maxlag*dt

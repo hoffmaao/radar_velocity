@@ -39,7 +39,6 @@ PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
 STEP_MIN  = 3;      % [min] animation time step
 FPS       = 40;
 N_TIDE_PT = 12;     % points across the array that the mean tide averages over
-TRAIL_H   = 6;      % [h] how long a surveyed track stays highlighted
 LIMA_DEC  = 20;     % decimation when reading LIMA for the continent inset
 ZOOM_OUT  = 1.15;   % how far to pull the map back from the survey extent
 
@@ -104,14 +103,13 @@ fprintf('mean tide range %.3f m; max spread across the array %.3f m\n', ...
 % The MEaSUREs grounding line ships in EPSG:3031 metres, and so does LIMA, so
 % the inset works natively in that grid and only the main panel needs the
 % conversion into the local tangent frame.
-[gx_km, gy_km, gl_ps] = deal([], [], []);
+[gx_km, gy_km] = deal([], []);
 try
   S = shaperead(GL_SHP);
   GX = []; GY = [];
   for k = 1:numel(S)
     GX = [GX; S(k).X(:); NaN]; GY = [GY; S(k).Y(:); NaN]; %#ok<AGROW>
   end
-  gl_ps = [GX GY];
   [glat, glon] = projinv(projcrs(3031), GX, GY);
   gx_km = xkm(glon); gy_km = ykm(glat);
   near = ~(gx_km < -20 | gx_km > 20 | gy_km < -20 | gy_km > 20);

@@ -129,6 +129,19 @@ if ~isfield(param.vvel,'coalign_half_win') || isempty(param.vvel.coalign_half_wi
   param.vvel.coalign_half_win = 40;
 end
 
+% coalign_min_quality: floor on the cross-spectrum phase-slope consistency
+% (info.quality) below which the measured shift is rejected as noise and
+% the pair is left unaligned. The floor separates cleanly: real pairs
+% measure about 1.00, synthetic pairs at gamma 0.8 about 0.99, and a
+% decorrelated (noise-only) surface window about 1/sqrt(Npairs), which is
+% about 0.13 for the default window - so 0.5 sits well clear of both
+% populations. Without it, a failed measurement is uniform noise over the
+% unambiguous range and can land inside coalign_max_lag, applying a
+% spurious bulk shift far larger than the artefact being removed.
+if ~isfield(param.vvel,'coalign_min_quality') || isempty(param.vvel.coalign_min_quality)
+  param.vvel.coalign_min_quality = 0.5;
+end
+
 % coherence_threshold: samples below this do not constrain the fast-time
 % unwrap and are excluded from the block averages
 if ~isfield(param.vvel,'coherence_threshold') || isempty(param.vvel.coherence_threshold)

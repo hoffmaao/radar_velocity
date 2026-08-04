@@ -360,5 +360,27 @@ assert(abs(out34.dtau_bulk - expect_bulk34) < 0.25e-9, ...
   'pair 3->4: coalign measured %.3f ns against an injected %.3f ns', ...
   out34.dtau_bulk*1e9, expect_bulk34*1e9);
 
+%% Coalignment rejects a decorrelated pair rather than applying noise
+% =====================================================================
+% Two INDEPENDENT speckle fields share no signal, so the surface-window
+% cross-spectrum phase slope is noise: quality lands near 1/sqrt(Npairs)
+% (about 0.13 for the default window), far below the coalign_min_quality
+% floor, and the estimate must be rejected with the secondary returned
+% bit-identical instead of shifted by a spurious bulk delay.
+rand('seed', 13); randn('seed', 13);   %#ok<RAND>
+noise_a = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);
+noise_b = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);
+param_n = vvel_defaults(param);
+[noise_out, info_n] = vdef.coalignPair(noise_a, noise_b, ...
+  struct('Time', Time, 'Surface', Surface*ones(1,Nx), 'fc', fc), param_n.vvel);
+fprintf('coalign noise-only: quality %.3f, applied %d\n', info_n.quality, info_n.applied);
+assert(~info_n.applied, 'a decorrelated pair must be rejected, not coaligned');
+assert(isnan(info_n.dtau_bulk), 'a rejected pair must report dtau_bulk = NaN');
+assert(isfinite(info_n.quality) && info_n.quality < param_n.vvel.coalign_min_quality, ...
+  'a noise-only window must measure quality below the floor (got %.3f)', info_n.quality);
+assert(isequal(noise_out, noise_b), ...
+  'a rejected secondary must come back bit-identical');
+clear noise_a noise_b noise_out;
+
 fprintf('\nPASS (%.1f s)\n', toc(t0));
 
