@@ -22,15 +22,10 @@ function [dtau, info] = differentialRange(map, opts)
 %     .max_gap_bins          longest incoherent run that may be bridged
 %
 %   SIGN CONVENTION. The interferogram is formed as sec .* conj(ref) (see
-%   vdef.multilook), matching both polarimetric.m in OPR and the
-%   fabric_anisotropy chain. For the matched-filter convention
-%   s ~ exp(-1i*2*pi*fc*tau) this gives Phi = -2*pi*fc*dtau, hence
-%   phase_sign = -1, which is the value settled on in the fabric project by
-%   regressing phase against coregistration offsets. There is no
-%   coregistration field in the multipass product to re-derive it from, so
-%   it is a fixed parameter here; opr_vvel/vvel_defaults.m defaults it to
-%   -1 and the validation path is the cross-check described in
-%   opr_vvel/README.md.
+%   vdef.multilook), so for the matched-filter convention
+%   s ~ exp(-1i*2*pi*fc*tau) the phase is Phi = -2*pi*fc*dtau, hence
+%   phase_sign = -1. The caller supplies it; opr_vvel/vvel_defaults.m
+%   defaults it to -1 and records why it is fixed rather than estimated.
 %
 %   UNWRAPPING. dtau is smooth in depth, so the phase is unwrapped along
 %   fast time outward from the surface reference bin rather than with a 2-D

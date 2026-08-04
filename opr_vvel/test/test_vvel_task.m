@@ -211,8 +211,13 @@ assert(~exist(fullfile(out_dir, sprintf('%s_vvel_01_02.mat', pass_name)), 'file'
 
 %% Check each pair against the truth
 % =====================================================================
-tol_S1 = 0.10;
-tol_S2 = 0.20;   % the gradient is the weaker-constrained coefficient
+% Set just outside the errors these seeded synthetic pairs actually produce
+% (worst case S1 0.6%, S2 3.2%) rather than at a token 10%/20%, so that a
+% change to the fit weighting trips this instead of passing silently. The
+% seed is fixed and the numbers reproduce bit-for-bit, so the margin only
+% has to cover platform arithmetic, not run-to-run scatter.
+tol_S1 = 0.02;
+tol_S2 = 0.06;   % the gradient is the weaker-constrained coefficient
 for sec_idx = [3 4]
   out_fn = fullfile(out_dir, sprintf('%s_vvel_01_%02d.mat', pass_name, sec_idx));
   assert(exist(out_fn,'file') == 2, 'missing output %s', out_fn);

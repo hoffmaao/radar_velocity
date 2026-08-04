@@ -73,13 +73,11 @@ product with a disabled pass in the middle specifically to cover this.
   velocity, and records the along-track spread. On the EAGER 2022 lines
   the passes are walked in ~22 min and in both directions, so this is not
   a constant.
-- **The phase sign.** The polarimetric product carries coregistration
-  `row_offset`s to regress the sign against; the multipass product carries
-  nothing equivalent. `phase_sign` is therefore FIXED at -1 - the
-  matched-filter convention for an interferogram formed as
-  `sec .* conj(ref)`, settled in the fabric project - rather than
-  estimated. Changing it asserts a different convention; it does not fit
-  one.
+- **The phase sign.** The multipass product carries nothing equivalent to
+  the polarimetric product's coregistration `row_offset`s, so `phase_sign`
+  is FIXED at -1 rather than estimated: changing it asserts a different
+  convention, it does not fit one. `vvel_defaults.m` defines the parameter
+  and carries the full rationale.
 - **Whether the surface phase was already normalised.** `surf_flatten_en`
   is a hardcoded `false` local in `multipass.m` (line ~369), not a
   parameter, so no upstream flattening has happened and
@@ -87,14 +85,11 @@ product with a disabled pass in the middle specifically to cover this.
   records the flag anyway, so a future toolbox version that exposes it
   cannot silently change what these products mean.
 
-## What surface referencing does and does not remove
+## What surface referencing does not remove
 
 Referencing `dtau` to zero just below the surface return removes
-everything common to the whole column: antenna height change, rigid-body
-tidal heave, bulk timing drift, and the unwrapping constant. What survives
-is the differential vertical motion within the column - the vertical
-strain signal - plus tidal flexure, which at a grounding-zone site like
-Windless Bight is real signal rather than error.
+everything common to the whole column; "What surface referencing removes"
+in the project README lists what that covers and what survives.
 
 It does NOT remove topographic phase from a cross-track baseline, which is
 not common to the column. `vvel_task` reports `baseline_y` and warns above

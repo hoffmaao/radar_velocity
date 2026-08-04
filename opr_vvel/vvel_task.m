@@ -179,9 +179,9 @@ map.Surface   = Surface;
 map.fc        = fc;
 map.phase     = angle(igram);
 map.coherence = coh;
-% multipass writes wrapped phase only; surf_flatten_en is a hardcoded false
-% local in multipass.m (not a parameter), so no surface flattening has
-% happened upstream and vdef.differentialRange does all the referencing.
+% multipass writes wrapped phase only and flattens no surface phase, so
+% vdef.differentialRange does all the referencing. Why upstream flattening
+% cannot be assumed: see opr_vvel/README.md.
 map.phase_is_unwrapped = false;
 
 %% Chain: dtau -> blocks -> displacement -> strain rate
@@ -360,10 +360,9 @@ max_valid_bin = info.max_valid_bin;
 
 pass_idx_ref = ref_idx;
 pass_idx_sec = sec_idx;
-% multipass.m hardcodes surf_flatten_en = false (it is not a parameter), so
-% no upstream surface-phase normalisation has been applied. Recorded so a
-% future toolbox version that exposes it cannot silently change the meaning
-% of these products.
+% Recorded, not read: multipass.m hardcodes this false, so stamping it into
+% the output keeps a future toolbox version that exposes it from silently
+% changing what these products mean. Rationale in opr_vvel/README.md.
 surf_flatten_en = false;
 
 param_vvel = param;

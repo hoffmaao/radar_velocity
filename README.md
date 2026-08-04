@@ -149,10 +149,9 @@ reported strain rates and velocities are converted to per-year.
 
 `dh < 0` means the column between the surface and the reflector has
 SHORTENED (vertical compression). The interferogram is `sec .* conj(ref)`,
-matching `polarimetric.m` and the fabric chain, so `phase_sign = -1` (the
-matched-filter convention settled in the fabric project). There is no
-coregistration field in the multipass product to re-derive the sign from,
-so it is a fixed parameter here rather than auto-detected.
+matching `polarimetric.m` and the fabric chain, so `phase_sign` is fixed
+at -1 rather than auto-detected. `opr_vvel/vvel_defaults.m` defines the
+parameter and carries the full rationale.
 
 ### What surface referencing removes
 
@@ -183,11 +182,10 @@ that mapping; everything user-facing is a pass index.
 and can still carry a full SLC image, so `opr_vvel` deliberately does not
 load it - the main pass's own vectors in `pass` are the common axes.
 
-Surface flattening is NOT applied upstream: `surf_flatten_en` is a
-hardcoded `false` local in `multipass.m` (~line 369), not a parameter, so
-`vdef.differentialRange` does all the surface referencing. The output
-records the flag anyway, so a future toolbox version that exposes it
-cannot silently change what these products mean.
+Surface flattening is NOT applied upstream, so `vdef.differentialRange`
+does all the surface referencing. See "Things the product does not tell
+you" in `opr_vvel/README.md` for why, and for what recording the flag in
+the output protects against.
 
 ## Running the validation
 
