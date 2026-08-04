@@ -59,6 +59,11 @@ jobs:
         run: |
           octave --no-gui --eval "try, test_surface_reference; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
 
+      - name: Tide admittance fit
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, test_tide_admittance; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
       - name: vvel_task end to end
         working-directory: opr_vvel/test
         run: |

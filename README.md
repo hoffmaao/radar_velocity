@@ -76,17 +76,24 @@ profiles went from uncorrelated (0.125) to correlated in shape (0.807),
 but an offset in absolute r remains. That residual is an ANALYSIS
 limitation, not a processing one: the two builds reference different
 epochs (2022-12-09 vs 2022-12-12), and a plain correlation is invariant
-to the constant strain offset but not to the secular trend, which enters
-with a reference-dependent sign. The reference-invariant quantity is the
-tide admittance from a joint strain = a + b*t + c*tide fit, which is the
-planned next step for both the analysis and the acceptance test.
+to the constant strain offset but not to the secular trend, which
+aliases in through the sample covariance of time with tide - a quantity
+that depends on which pairs a build happens to contain. The
+reference-invariant quantity is the tide admittance of the joint
+strain = a + b*t + c*tide fit, `vdef.fitTideAdmittance`: re-referencing
+shifts strain, t and tide by constants that the intercept absorbs, so
+the trend b and admittance c cannot move. `scripts/test_tide_admittance.m`
+demonstrates the aliasing deterministically (two noiseless builds of the
+same truth differ in plain r by up to 0.23 while their admittances are
+bit-equal) and is the unit test. Both analysis scripts now read the
+admittance and its trend-removed partial correlation; plain r survives
+only in printed tables for continuity.
 
 **Interpretation caveats that remain**: the five products are four legs
 of ONE line (120-145 m apart, walked ~24 min apart), not independent
-lines; and the post-fix hinge position (GL1/GL2 cross from strongly
-positive to negative ~3.3 km along, within ~1 km of the mapped MEaSUREs
-grounding line) should be read from the joint-fit admittance once that
-lands, not from the plain correlation.
+lines; and the hinge position should be read from the joint-fit
+admittance (which the analysis scripts now report), not from the plain
+correlation.
 
 ## Target data
 

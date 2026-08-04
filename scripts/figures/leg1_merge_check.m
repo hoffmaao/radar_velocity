@@ -7,9 +7,18 @@
 %   correlate at 0.807 (from 0.125). The residual offset in absolute r is
 %   a limitation of the plain correlation itself - the builds reference
 %   different epochs, and the secular strain trend aliases in with a
-%   reference-dependent sign - so strict agreement is expected from the
-%   tide ADMITTANCE of a joint strain = a + b*t + c*tide fit, not from r.
-%   Until that lands, treat matching profile SHAPE as the pass criterion.
+%   reference-dependent sign (demonstrated deterministically in
+%   scripts/test_tide_admittance.m) - so the acceptance metric is now the
+%   TIDE ADMITTANCE of the joint strain = a + b*t + c*tide fit
+%   (vdef.fitTideAdmittance), which that aliasing cannot touch. The plain
+%   r comparison is retained below for continuity with the history.
+%
+%   THE PASS CRITERION. EAGER_2022 and GL1-minus-20221209_01 use the SAME
+%   13 passes, so their admittance profiles measure the same ice with the
+%   same sampling and should agree within the fit uncertainties: profile
+%   correlation high AND rms admittance difference comparable to the
+%   quoted 1-sigma. GL1 with all 14 passes adds one pair, so it may
+%   differ by that pair's leverage but not more.
 %
 %   EAGER_2022 and EAGER_2022_GL1 are the SAME out-and-back leg of the same
 %   line: identical pass mid-times for every shared segment, cross-track
@@ -27,6 +36,8 @@
 %   Run on the server:
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../leg1_merge_check.m')"
 
+addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
+
 if ~exist('VVEL_SUFFIX','var'), VVEL_SUFFIX = ''; end
 vvel_dir = ['/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_vvel' VVEL_SUFFIX];
 mp_dir   = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
@@ -40,35 +51,54 @@ cases = { ...
 
 R = cell(1,size(cases,1));
 for c = 1:size(cases,1)
-  [r, along, lat, lon, nseg] = leg_response(cases{c,1}, vvel_dir, mp_dir, ...
+  R{c} = leg_response(cases{c,1}, vvel_dir, mp_dir, ...
     REF_DEPTH, MAX_BASELINE, cases{c,2});
-  R{c} = struct('r',r,'along',along,'lat',lat,'lon',lon);
-  [xc, latc] = hinge(r, along, lat);
-  fprintf('%-16s %-38s %2d pairs  hinge %s km (lat %s)\n', cases{c,1}, cases{c,3}, ...
-    nseg, numstr(xc/1e3,'%.2f'), numstr(latc,'%.4f'));
+  [xc, latc] = hinge(R{c}.rp, R{c}.along, R{c}.lat);
+  fprintf('%-16s %-38s %2d pairs  hinge (r_partial) %s km (lat %s)\n', ...
+    cases{c,1}, cases{c,3}, R{c}.npair, numstr(xc/1e3,'%.2f'), numstr(latc,'%.4f'));
 end
 
-%% Do the two leg-1 products agree once the extra pass is removed?
+%% The acceptance metric: do the two 13-pass builds give the same admittance?
+adm_compare('EAGER_2022 vs GL1-minus-20221209_01 (same 13 passes)', R{1}, R{2});
+adm_compare('EAGER_2022 vs GL1 with all 14 passes', R{1}, R{3});
+
+%% The historical plain-r comparison, kept for continuity
 a = R{1}.r; b = R{2}.r;
 ok = isfinite(a) & isfinite(b);
-fprintf('\nEAGER_2022 vs GL1-minus-20221209_01 over %d common blocks:\n', nnz(ok));
-fprintf('  max |dr| = %.3f, rms |dr| = %.3f, correlation of the two r profiles = %.3f\n', ...
+fprintf('\nPlain r (NOT reference-invariant, see header) over %d common blocks:\n', nnz(ok));
+fprintf('  EAGER_2022 vs GL1 minus one: max |dr| = %.3f, rms = %.3f, profile corr = %.3f\n', ...
   max(abs(a(ok)-b(ok))), sqrt(mean((a(ok)-b(ok)).^2)), corr2(a(ok), b(ok)));
-
 c14 = R{3}.r;
 ok2 = isfinite(a) & isfinite(c14);
-fprintf('EAGER_2022 vs GL1 with all 14 passes over %d common blocks:\n', nnz(ok2));
-fprintf('  max |dr| = %.3f, rms |dr| = %.3f, correlation of the two r profiles = %.3f\n', ...
+fprintf('  EAGER_2022 vs GL1 all 14:    max |dr| = %.3f, rms = %.3f, profile corr = %.3f\n', ...
   max(abs(a(ok2)-c14(ok2))), sqrt(mean((a(ok2)-c14(ok2)).^2)), corr2(a(ok2), c14(ok2)));
 
-fprintf('\nblock  along[km]   EAGER_2022   GL1 minus one   GL1 all 14\n');
-for k = 1:numel(a)
-  fprintf('%5d %10.2f %12s %15s %12s\n', k, R{1}.along(k)/1e3, ...
-    numstr(a(k),'%.2f'), numstr(b(k),'%.2f'), numstr(c14(k),'%.2f'));
+fprintf('\nblock  along[km] %11s %11s %11s %8s %8s %8s\n', ...
+  'adm[ue/m]', 'adm[ue/m]', 'adm[ue/m]', 'rp', 'rp', 'rp');
+fprintf('%17s %11s %11s %11s %8s %8s %8s\n', '', 'EAGER', 'GL1-1', 'GL1-14', ...
+  'EAGER', 'GL1-1', 'GL1-14');
+for k = 1:numel(R{1}.adm)
+  fprintf('%5d %10.2f %11s %11s %11s %8s %8s %8s\n', k, R{1}.along(k)/1e3, ...
+    numstr(1e6*R{1}.adm(k),'%.1f'), numstr(1e6*R{2}.adm(k),'%.1f'), ...
+    numstr(1e6*R{3}.adm(k),'%.1f'), numstr(R{1}.rp(k),'%.2f'), ...
+    numstr(R{2}.rp(k),'%.2f'), numstr(R{3}.rp(k),'%.2f'));
 end
 
 %% ========================================================================
-function [r, along, lat, lon, npair] = leg_response(pass_name, vvel_dir, mp_dir, ...
+function adm_compare(label, Ra, Rb)
+ok = isfinite(Ra.adm) & isfinite(Rb.adm);
+d  = Ra.adm(ok) - Rb.adm(ok);
+% The quadrature sum of the two builds' quoted sigmas, averaged over the
+% common blocks: the scale the rms difference should sit at if the two
+% builds differ only by their noise
+sig = sqrt(mean(Ra.adm_std(ok).^2 + Rb.adm_std(ok).^2));
+fprintf('\n%s, %d common blocks:\n', label, nnz(ok));
+fprintf('  admittance: max |diff| = %.1f ue/m, rms = %.1f ue/m (expected from fit sigma: %.1f), profile corr = %.3f\n', ...
+  1e6*max(abs(d)), 1e6*sqrt(mean(d.^2)), 1e6*sig, corr2(Ra.adm(ok), Rb.adm(ok)));
+end
+
+%% ========================================================================
+function R = leg_response(pass_name, vvel_dir, mp_dir, ...
     REF_DEPTH, MAX_BASELINE, drop_segs)
 f = dir(fullfile(vvel_dir, [pass_name '_vvel_*.mat']));
 keep = false(1,numel(f));
@@ -89,7 +119,7 @@ clear L;
 
 sec_per_year = 365.25*86400;
 np = numel(f);
-sec_idx = nan(1,np); ref_idx = nan(1,np); maxbl = nan(1,np);
+sec_idx = nan(1,np); ref_idx = nan(1,np); maxbl = nan(1,np); t_sec = nan(1,np);
 strain = []; along = []; lat = []; lon = [];
 for i = 1:np
   o = load(fullfile(vvel_dir, f(i).name));
@@ -99,6 +129,7 @@ for i = 1:np
       pass_name, f(i).name, ref_idx(i), f(1).name, ref_idx(1), vvel_dir);
   end
   maxbl(i) = max(abs(o.baseline_y));
+  t_sec(i) = mean(o.GPS_time + o.delta_t_blk*sec_per_year,'omitnan');
   if isempty(strain)
     Nblk = numel(o.S1); strain = nan(Nblk, np);
     along = o.Along_track(:); lat = o.Latitude(:); lon = o.Longitude(:);
@@ -115,9 +146,10 @@ use = ~(isfinite(maxbl) & maxbl > MAX_BASELINE);
 for k = 1:numel(drop_segs)
   use = use & ~strcmp(pass_seg(sec_idx), drop_segs{k});
 end
-sec_idx = sec_idx(use); strain = strain(:,use);
-tide = pass_elev(sec_idx) - pass_elev(ref_idx(1));
-npair = numel(sec_idx);
+sec_idx = sec_idx(use); strain = strain(:,use); t_sec = t_sec(use);
+tide   = pass_elev(sec_idx) - pass_elev(ref_idx(1));
+t_days = (t_sec - min(t_sec))/86400;
+npair  = numel(sec_idx);
 
 Nblk = size(strain,1);
 r = nan(Nblk,1);
@@ -128,6 +160,11 @@ for b = 1:Nblk
   rm = corrcoef(tide(okb), s(okb));
   r(b) = rm(1,2);
 end
+
+A = vdef.fitTideAdmittance(strain, t_days, tide);
+
+R = struct('r',r,'adm',A.admittance(:),'adm_std',A.admittance_std(:), ...
+  'rp',A.r_partial(:),'along',along,'lat',lat,'lon',lon,'npair',npair);
 end
 
 %% ========================================================================
