@@ -196,4 +196,7 @@ docker run --rm --platform linux/amd64 -v "$PWD":/work -w /work/scripts \
   gnuoctave/octave:latest octave --no-gui synthetic_vertical_velocity.m
 ```
 
-Figures land in `figs/`.
+Figures land in `figs/`. The surface-reference regression test runs the
+same way, with `test_surface_reference.m` in place of the script name; the
+OPR adapter's end-to-end test has its own command in
+`opr_vvel/README.md`.

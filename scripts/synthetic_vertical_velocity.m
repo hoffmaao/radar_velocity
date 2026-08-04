@@ -174,7 +174,11 @@ fprintf('PASS: degenerate sigma samples are masked, not weighted up.\n');
 fig_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'figs');
 if ~exist(fig_dir,'dir'), mkdir(fig_dir); end
 
-h = figure('Visible','off');
+% Three panels side by side do not fit in the default 560 pt figure width:
+% gnuplot keeps the tick count and lets the labels run together, so
+% '-80-60-40-20' reads as one number. Widening the figure is the portable
+% fix - xticks/xtickformat are not available in both MATLAB and Octave.
+h = figure('Visible','off','Position',[100 100 1000 420]);
 
 subplot(1,3,1);
 plot(1e12*blk.dtau, V.depth(:,1), '-'); hold on;
@@ -182,7 +186,10 @@ plot(1e12*dtau_true, depth_col, 'k--', 'LineWidth', 1.5);
 set(gca,'YDir','reverse'); ylim([0 550]); grid on;
 xlabel('\Delta\tau (ps)'); ylabel('Depth (m)');
 title('Differential traveltime');
-legend('blocks','truth','Location','SouthWest');
+% NorthWest, not SouthWest: dtau grows downward from zero at the surface,
+% so the bottom-left corner is where the deep samples are and the legend
+% would sit on top of them.
+legend('blocks','truth','Location','NorthWest');
 
 subplot(1,3,2);
 plot(V.v, V.depth(:,1), '-'); hold on;

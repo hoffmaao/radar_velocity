@@ -11,8 +11,9 @@ function [success] = vvel_task(param, mp)
 %   vdef.verticalDisplacement dtau -> vertical displacement relative to the
 %                             surface, then relative vertical velocity
 %   vdef.invertStrainRate     Legendre inversion for eps_zz(d)
-% All processing options come from the param.vvel struct (see vvel.m),
-% which the +vdef functions read directly.
+% All processing options come from the param.vvel struct (see
+% vvel_defaults.m, where every field is documented), which the +vdef
+% functions read directly.
 %
 % mp is the loaded multipass product (see vvel.m, which loads the file once
 % and reuses it across pairs). When it is omitted the task loads the file
