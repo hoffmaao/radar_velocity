@@ -68,7 +68,7 @@ remove it, envelope and carrier. Empirical rather than the deterministic
 inverse because the surviving fraction is not exactly one. Validated on
 synthetics (injected bulk delays of 0.7-2.2 ns recovered to 11 ps or
 better; strain recovery unchanged) and recorded in every product as
-`dtau_bulk` / `dtau_bulk_pred` / `coalign_quality`.
+`dtau_bulk` / `dtau_bulk_pred` / `coalign_quality` / `coalign_applied`.
 
 **What the leg-1 comparison says now**
 (`scripts/figures/leg1_merge_check.m`): the two builds' tidal-response
@@ -144,6 +144,11 @@ reported strain rates and velocities are converted to per-year.
   and pinned at `rho_sfc` / `rho_bco`, plus refractive index (Kovacs or
   Looyenga) and the vertical twtt table.
 - `vdef.depthFromTwtt` - twtt below the surface to depth and local `n`.
+- `vdef.coalignPair` - measures the residual bulk fast-time shift between
+  a pair by cross-spectrum group delay in a surface window and removes it,
+  envelope and carrier, before the interferogram. This is the fix for the
+  tide-proportional artefact; see 'Fixed: the tide-proportional artefact'
+  above for the mechanism and the estimator rationale.
 - `vdef.multilook` - boxcar interferogram and coherence from a coregistered
   SLC pair. Cross product per pixel, averaged after - never the reverse.
 - `vdef.differentialRange` - interferogram phase to `dtau(twtt, x)`,
