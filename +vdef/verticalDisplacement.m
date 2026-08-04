@@ -93,6 +93,12 @@ if isfield(opts,'densification_rate') && ~isempty(opts.densification_rate) ...
     otherwise
       dn_drho = gradient(P.n, P.rho);
   end
+  % vdef.firnColumn saturates rho at solid ice, so below the saturation
+  % depth the spacing gradient divides by is zero and dn_drho comes back
+  % non-finite. Those depths are all below close-off, where the taper is
+  % already zero, but NaN*0 is NaN and cumtrapz would carry it down the
+  % whole column and NaN out every deeper reflector.
+  dn_drho(~isfinite(dn_drho)) = 0;
   % Densification is confined to the firn: taper to zero at close-off
   taper = max(0, 1 - P.d/par.bco_depth);
   integrand = dn_drho .* opts.densification_rate .* taper;

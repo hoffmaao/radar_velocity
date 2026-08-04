@@ -1,4 +1,16 @@
 %LEG1_MERGE_CHECK Merge the two leg-1 products, and test what separated them.
+%
+%   *** WARNING: THE QUANTITIES THIS SCRIPT PRINTS ARE NOT TRUSTWORTHY YET. ***
+%   The tide-vs-strain correlations and the hinge positions below come from
+%   the same dh_blk data as scripts/figures/tidal_deformation.m, and carry
+%   the same TIDE-PROPORTIONAL ARTEFACT: two multipass builds of the same
+%   leg give anti-correlated strain whose difference scales with the tidal
+%   heave, traced to map.Surface coming from pass.surface, which predates
+%   multipass's z-motion compensation. See 'Known issue: the tidal analysis
+%   is not yet trustworthy' in the project README for the full diagnosis and
+%   the proposed fix - this script is the regression test for that fix.
+%   Published as-is, on purpose.
+%
 %   EAGER_2022 and EAGER_2022_GL1 are the SAME out-and-back leg of the same
 %   line: identical pass mid-times for every shared segment, cross-track
 %   medians -213 m both. GL1's pass list is a strict superset - EAGER_2022's
@@ -82,6 +94,10 @@ strain = []; along = []; lat = []; lon = [];
 for i = 1:np
   o = load(fullfile(vvel_dir, f(i).name));
   sec_idx(i) = o.pass_idx_sec; ref_idx(i) = o.pass_idx_ref;
+  if ref_idx(i) ~= ref_idx(1)
+    error('%s: %s is referenced to pass %d but %s is referenced to pass %d. This script assumes the "main" pairing, where every product shares one reference pass; a sequential-pairing product must not be co-located in %s.', ...
+      pass_name, f(i).name, ref_idx(i), f(1).name, ref_idx(1), vvel_dir);
+  end
   maxbl(i) = max(abs(o.baseline_y));
   if isempty(strain)
     Nblk = numel(o.S1); strain = nan(Nblk, np);

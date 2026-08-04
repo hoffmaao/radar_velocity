@@ -14,7 +14,8 @@ function [dtau, info] = differentialRange(map, opts)
 %     .coherence   Nt x Nx magnitude coherence in [0, 1]
 %     .phase_is_unwrapped  logical (default false)
 %
-%   opts fields (see vdef.m for the full documented defaults):
+%   opts fields (see opr_vvel/vvel_defaults.m for the full documented
+%   defaults):
 %     .phase_sign            +1 or -1; dtau = phase_sign*Phi/(2*pi*fc)
 %     .ref_twtt_offset       twtt below the surface where dtau := 0 [s]
 %     .coherence_threshold   samples below this do not constrain the unwrap
@@ -27,8 +28,9 @@ function [dtau, info] = differentialRange(map, opts)
 %   phase_sign = -1, which is the value settled on in the fabric project by
 %   regressing phase against coregistration offsets. There is no
 %   coregistration field in the multipass product to re-derive it from, so
-%   it is a fixed parameter here; vdef.m defaults it to -1 and the
-%   validation path is the cross-check described in opr_vvel/README.md.
+%   it is a fixed parameter here; opr_vvel/vvel_defaults.m defaults it to
+%   -1 and the validation path is the cross-check described in
+%   opr_vvel/README.md.
 %
 %   UNWRAPPING. dtau is smooth in depth, so the phase is unwrapped along
 %   fast time outward from the surface reference bin rather than with a 2-D
@@ -46,6 +48,11 @@ function [dtau, info] = differentialRange(map, opts)
 %     info.valid          Nt x Nx logical validity mask
 %     info.max_valid_bin  1 x Nx deepest trusted bin per trace
 %     info.phase_sign     the sign actually applied
+%     info.dtau_above_ref Nt x Nx the differential traveltime ABOVE the
+%                   reference bin, NaN elsewhere. Not used by the
+%                   inversion - the upward unwrap gets no gap truncation -
+%                   but it is what the upward pass produces, kept so the
+%                   surface referencing can actually be inspected.
 %
 %   See also vdef.multilook, vdef.blockAverage, vdef.verticalDisplacement.
 
@@ -103,7 +110,8 @@ else
     if r < Nt
       Phi(r+1:Nt,x) = map.phase(r,x) + cumsum(dphi(r:Nt-1,x));
     end
-    % Upward (decreasing twtt); only used for QC, not for the inversion
+    % Upward (decreasing twtt); surfaced as info.dtau_above_ref for QC, not
+    % used by the inversion
     if r > 1
       Phi(1:r-1,x) = map.phase(r,x) - flipud(cumsum(flipud(dphi(1:r-1,x))));
     end
@@ -130,19 +138,23 @@ dtau = opts.phase_sign * Phi / (2*pi*map.fc);
 dtau(~valid) = NaN;
 
 % Nothing above the reference bin is used: there is no differential column
-% between the surface and a reflector shallower than the reference.
+% between the surface and a reflector shallower than the reference. It is
+% split off rather than discarded so the upward unwrap remains inspectable.
+dtau_above_ref = nan(Nt, Nx);
 for x = 1:Nx
   if isfinite(ref_bin(x)) && ref_bin(x) > 1
+    dtau_above_ref(1:ref_bin(x)-1, x) = dtau(1:ref_bin(x)-1, x);
     dtau(1:ref_bin(x)-1, x) = NaN;
   end
 end
 
 info = [];
-info.ref_bin       = ref_bin;
-info.valid         = isfinite(dtau);
-info.max_valid_bin = max_valid_bin;
-info.phase_sign    = opts.phase_sign;
-info.dt            = dt;
+info.ref_bin        = ref_bin;
+info.valid          = isfinite(dtau);
+info.max_valid_bin  = max_valid_bin;
+info.phase_sign     = opts.phase_sign;
+info.dt             = dt;
+info.dtau_above_ref = dtau_above_ref;
 
 end
 

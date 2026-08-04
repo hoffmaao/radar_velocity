@@ -76,6 +76,7 @@ bins_per_look = max(1, opts.bins_per_look);
 
 S = [];
 S.coef       = nan(K+1, Nblk);
+S.coef_mmyr  = nan(K+1, Nblk);
 S.coef_std   = nan(K+1, Nblk);
 S.H          = nan(1, Nblk);
 S.top_depth  = nan(1, Nblk);
@@ -114,8 +115,13 @@ for b = 1:Nblk
   else
     sd = V.v_std(sel,b);
   end
-  if any(isfinite(sd) & sd > 0)
-    w = 1 ./ max(sd, eps).^2;
+  % A sigma that is NaN or non-positive carries no information, so the
+  % sample is masked out rather than clamped: two-argument max ignores NaN,
+  % so max(sd, eps) would turn exactly those samples into the heaviest ones.
+  ok_sd = isfinite(sd) & sd > 0;
+  if any(ok_sd)
+    w = zeros(size(sd));
+    w(ok_sd) = 1 ./ sd(ok_sd).^2;
     w(~isfinite(w)) = 0;
   else
     w = blk.coh(sel,b);
@@ -167,7 +173,8 @@ for b = 1:Nblk
   % Weighted RMS residual, for reporting
   rms_w = sqrt(sum(W .* resid.^2) / sum(W));
 
-  S.coef(:,b)     = c;
+  S.coef(:,b)      = c;
+  S.coef_mmyr(:,b) = 1e3 * c;
   S.coef_std(:,b) = cstd;
   S.H(b)          = H;
   S.top_depth(b)  = top;

@@ -184,6 +184,10 @@ for i = 1:np
     strain = nan(Nblk, np, nd);
     along = o.Along_track(:); lat = o.Latitude(:); lon = o.Longitude(:);
   end
+  if ref_idx(i) ~= ref_idx(1)
+    error('%s: %s is referenced to pass %d but %s is referenced to pass %d. This script assumes the "main" pairing, where every product shares one reference pass; a sequential-pairing product must not be co-located in %s.', ...
+      pass_name, f(i).name, ref_idx(i), f(1).name, ref_idx(1), vvel_dir);
+  end
   t_sec(i) = mean(o.GPS_time + o.delta_t_blk*sec_per_year,'omitnan');
   for b = 1:Nblk
     d  = o.depth_blk(:,b);
@@ -209,6 +213,7 @@ end
 
 [t_sec, ord] = sort(t_sec);
 sec_idx = sec_idx(ord);
+ref_idx = ref_idx(ord);
 strain  = strain(:,ord,:);
 main_pass = ref_idx(1);
 tide   = pass_elev(sec_idx) - pass_elev(main_pass);

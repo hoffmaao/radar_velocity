@@ -138,7 +138,38 @@ assert(abs(mean(S2_err,'omitnan')) < tol*abs(S2_true), ...
   'S2 not recovered within %.0f%%', 100*tol);
 fprintf('\nPASS: strain rate recovered within %.0f%% of truth.\n', 100*tol);
 
-%% 5. Figure
+%% 5. Degenerate per-sample sigma
+% =====================================================================
+% A bin whose within-block scatter collapses to zero, or is missing
+% altogether, carries no weighting information. It has to be excluded, not
+% given the largest weight in the block: clamping the sigma instead of
+% masking it hands that one bin a weight of 1/eps^2 and the normalisation
+% then crushes every legitimate sample to ~1e-31, so the fit is driven
+% entirely by the degenerate bin.
+Vd = V;
+fit_rows = find(isfinite(V.depth(:,1)) & isfinite(V.v(:,1)) & ...
+  V.depth(:,1) >= opts.fit_top_depth & V.depth(:,1) <= opts.fit_bot_depth);
+assert(numel(fit_rows) >= 2, 'no fitted samples to degrade');
+Vd.v_scatter(fit_rows(1),   1) = 0;
+Vd.v_scatter(fit_rows(end), 1) = NaN;
+Sd = vdef.invertStrainRate(Vd, blk, opts);
+
+fprintf('\nBlock 1 with one zero and one NaN sigma:\n');
+fprintf('  S1 %+.4e -> %+.4e /yr (truth %+.4e)\n', S.S1(1), Sd.S1(1), S1_true);
+fprintf('  S2 %+.4e -> %+.4e /yr (truth %+.4e)\n', S.S2(1), Sd.S2(1), S2_true);
+
+assert(isfinite(Sd.S1(1)) && isfinite(Sd.S2(1)), ...
+  'degenerate sigma left block 1 uninverted');
+assert(abs(Sd.S1(1) - S1_true) < tol*abs(S1_true) && ...
+       abs(Sd.S2(1) - S2_true) < tol*abs(S2_true), ...
+  'degenerate sigma broke the recovery of block 1');
+% Dropping two samples out of a few hundred should barely move the fit
+assert(abs(Sd.S1(1) - S.S1(1)) < 0.02*abs(S1_true) && ...
+       abs(Sd.S2(1) - S.S2(1)) < 0.02*abs(S2_true), ...
+  'degenerate sigma perturbed block 1 far more than dropping two samples should');
+fprintf('PASS: degenerate sigma samples are masked, not weighted up.\n');
+
+%% 6. Figure
 % =====================================================================
 fig_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'figs');
 if ~exist(fig_dir,'dir'), mkdir(fig_dir); end
