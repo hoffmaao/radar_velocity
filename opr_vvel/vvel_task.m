@@ -205,8 +205,9 @@ V = vdef.verticalDisplacement(blk, map, par, opts);
 % (The optional densification correction inside verticalDisplacement uses
 % the scalar mean, which is far finer than its own accuracy.)
 delta_t_blk = cellfun(@(cidx) mean(dt_x(cidx),'omitnan'), blk.cols) / C.sec_per_year;
-V.v     = bsxfun(@rdivide, V.dh,     delta_t_blk);
-V.v_std = bsxfun(@rdivide, V.dh_std, abs(delta_t_blk));
+V.v         = bsxfun(@rdivide, V.dh,         delta_t_blk);
+V.v_std     = bsxfun(@rdivide, V.dh_std,     abs(delta_t_blk));
+V.v_scatter = bsxfun(@rdivide, V.dh_scatter, abs(delta_t_blk));
 
 S = vdef.invertStrainRate(V, blk, opts);
 
@@ -336,7 +337,12 @@ fit_top_depth = S.top_depth;
 fit_bot_depth = S.bot_depth;
 
 dtau_blk     = blk.dtau;
-dtau_std_blk = blk.dtau_std;
+% dtau_std_blk is the 1-sigma of the block MEAN; the undeflated
+% within-block scatter and the effective sample count behind it are kept
+% alongside it so the error bar can be audited.
+dtau_std_blk     = blk.dtau_std;
+dtau_scatter_blk = blk.dtau_scatter;
+neff_blk         = blk.n_eff;
 coh_blk      = blk.coh;
 coverage_blk = blk.coverage;
 block_starts = blk.starts;
@@ -381,7 +387,8 @@ fprintf('Saving output file:\n  %s\n', out_fn);
 opr_save(out_fn,'eps_zz','depth_grid','v_fit','S1','S2','epszz_mean','p_quad', ...
   'coef','coef_std','fit_rms','n_used','n_eff','norm_depth', ...
   'fit_top_depth','fit_bot_depth', ...
-  'dtau_blk','dtau_std_blk','coh_blk','coverage_blk','block_starts', ...
+  'dtau_blk','dtau_std_blk','dtau_scatter_blk','neff_blk', ...
+  'coh_blk','coverage_blk','block_starts', ...
   'depth_blk','dh_blk','dh_std_blk','v_blk','v_std_blk','n_local', ...
   'densification_applied','phase_sign','max_valid_bin','block_short', ...
   'delta_t','delta_t_sec','delta_t_blk','delta_t_spread_sec', ...

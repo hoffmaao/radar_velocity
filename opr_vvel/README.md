@@ -101,6 +101,30 @@ not common to the column. `vvel_task` reports `baseline_y` and warns above
 `param.vvel.max_baseline` (default 10 m). This matters in practice:
 `EAGER_2022_GL2` contains passes tens to >100 m off the main pass track.
 
+## Uncertainties in the product
+
+`dtau_std_blk`, and the `dh_std_blk` / `v_std_blk` derived from it, is the
+1-sigma of the block MEAN - a real error bar on `dh_blk` / `v_blk` - not
+the scatter of the samples inside the block. The within-block weighted
+scatter is divided by the square root of the effective number of
+independent along-track samples behind the mean. Adjacent columns are not
+independent, because `vdef.multilook` has already run a boxcar of
+`mlook_window(2)` range lines along track, so the (Kish) weighted sample
+count is deflated by `param.vvel.cols_per_look` - the along-track
+counterpart of the `bins_per_look` correction `vdef.invertStrainRate`
+applies in fast time.
+
+The undeflated scatter survives in the product as `dtau_scatter_blk` and
+the effective count as `neff_blk`. It is the scatter, not the error bar,
+that sets the relative weights in the Legendre fit, so `S1`, `S2`,
+`epszz_mean` and `eps_zz` do not depend on how many columns happened to
+clear the coverage test.
+
+`S1` and `S2` describe `eps_zz` over the normalisation depth `norm_depth`,
+whereas `epszz_mean` is the mean over the range actually fitted,
+`fit_top_depth` to `fit_bot_depth`. The two agree only when the fit spans
+exactly `0..norm_depth`, which the production settings do not.
+
 ## Known issue affecting downstream analysis
 
 The chain runs cleanly on the real products, but the tidal analysis built

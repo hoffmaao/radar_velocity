@@ -107,6 +107,16 @@ if baseline_main_idx < 1 || baseline_main_idx > Npass
     baseline_main_idx, Npass, in_fn);
 end
 
+% The main pass supplies the common axes AND is one half of every pair the
+% default 'main' pairing builds, so a disabled main is a dead batch. Say so
+% once here rather than once per pair in vvel_task.
+if ~ismember(baseline_main_idx, pass_en_idxs)
+  error('vvel:baseline_main_idx', ...
+    ['baseline_main_idx %d is disabled in pass_en_mask, so it has no image in data ' ...
+     'and cannot be one half of a pair. Enable it, or point param.vvel.baseline_main_idx ' ...
+     'at an enabled pass, in:\n  %s.'], baseline_main_idx, in_fn);
+end
+
 mp.baseline_main_idx = baseline_main_idx;
 mp.pass_en_idxs = pass_en_idxs;
 

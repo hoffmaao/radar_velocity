@@ -49,8 +49,14 @@ function V = verticalDisplacement(blk, map, par, opts)
 %     V.depth     Nt x Nblk depth below the surface [m]
 %     V.n_local   Nt x Nblk local refractive index
 %     V.dh        Nt x Nblk vertical displacement relative to surface [m]
-%     V.dh_std    Nt x Nblk propagated 1-sigma of dh [m]
+%     V.dh_std    Nt x Nblk propagated 1-sigma of dh [m]. This is the error
+%                 bar on V.dh: it comes from blk.dtau_std, the standard
+%                 error of the block mean, not from the within-block
+%                 scatter of the samples that formed it.
+%     V.dh_scatter Nt x Nblk propagated within-block scatter of dh [m]. A
+%                 relative noise measure for weighting, NOT an error bar.
 %     V.v         Nt x Nblk relative vertical velocity [m/yr] (NaN if no dt)
+%     V.v_std, V.v_scatter  the same two quantities as rates [m/yr]
 %     V.delta_t   repeat interval used [yr]
 %
 %   See also vdef.blockAverage, vdef.invertStrainRate, vdef.firnColumn.
@@ -68,6 +74,11 @@ twtt_below = bsxfun(@minus, Time, blk.Surface(:).');
 % Geometric conversion, using the LOCAL index at the reflector depth
 dh     = blk.dtau     * C.c / 2 ./ n_local;
 dh_std = blk.dtau_std * C.c / 2 ./ n_local;
+if isfield(blk,'dtau_scatter')
+  dh_scatter = blk.dtau_scatter * C.c / 2 ./ n_local;
+else
+  dh_scatter = dh_std;
+end
 
 % Optional densification correction (off by default)
 densification_applied = false;
@@ -96,16 +107,19 @@ V.depth   = depth;
 V.n_local = n_local;
 V.dh      = dh;
 V.dh_std  = dh_std;
+V.dh_scatter = dh_scatter;
 V.densification_applied = densification_applied;
 
 if isfield(opts,'delta_t') && ~isempty(opts.delta_t) && opts.delta_t ~= 0
-  V.delta_t = opts.delta_t;
-  V.v       = dh / opts.delta_t;
-  V.v_std   = dh_std / abs(opts.delta_t);
+  V.delta_t   = opts.delta_t;
+  V.v         = dh / opts.delta_t;
+  V.v_std     = dh_std / abs(opts.delta_t);
+  V.v_scatter = dh_scatter / abs(opts.delta_t);
 else
-  V.delta_t = NaN;
-  V.v       = nan(Nt, Nblk);
-  V.v_std   = nan(Nt, Nblk);
+  V.delta_t   = NaN;
+  V.v         = nan(Nt, Nblk);
+  V.v_std     = nan(Nt, Nblk);
+  V.v_scatter = nan(Nt, Nblk);
 end
 
 end

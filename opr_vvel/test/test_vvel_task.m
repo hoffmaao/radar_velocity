@@ -270,6 +270,21 @@ for sec_idx = [3 4]
   assert(mean(out.dh_blk(deep,1)) < 0, ...
     'compressive truth must give dh < 0 at depth');
 
+  % dh_std is the 1-sigma of the block MEAN, not the within-block scatter:
+  % it must sit below the scatter it is deflated from, and the displacement
+  % signal must stand clear of it - that is what the averaging buys
+  ok_std = isfinite(out.dtau_std_blk) & isfinite(out.dtau_scatter_blk);
+  assert(any(ok_std(:)), 'no block carried an uncertainty at all');
+  assert(all(out.dtau_std_blk(ok_std) <= out.dtau_scatter_blk(ok_std)*(1+1e-9)), ...
+    'dtau_std must not exceed the within-block scatter it is deflated from');
+  assert(all(out.neff_blk(ok_std) >= 1), ...
+    'the effective sample count behind a block mean fell below 1');
+  assert(any(out.neff_blk(ok_std) > 1.5), ...
+    'the effective sample count was never above 1, so no deflation was exercised');
+  deep_std = deep & isfinite(out.dh_std_blk(:,1));
+  assert(abs(mean(out.dh_blk(deep_std,1))) > 5*mean(out.dh_std_blk(deep_std,1)), ...
+    'the deep displacement signal must stand clear of its 1-sigma error bar');
+
   for ext = {'_coh.png','_dh.png','_epszz.png'}
     fig_fn = fullfile(out_dir, sprintf('%s_vvel_01_%02d%s', pass_name, sec_idx, ext{1}));
     assert(exist(fig_fn,'file') == 2, 'missing figure %s', fig_fn);

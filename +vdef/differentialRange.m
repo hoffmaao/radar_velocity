@@ -66,15 +66,24 @@ coherent = coh >= opts.coherence_threshold;
 Surface = map.Surface(:).';
 ref_twtt = Surface + opts.ref_twtt_offset;
 ref_bin  = round(interp1(Time, 1:Nt, ref_twtt, 'linear', NaN));
-ref_bin  = min(max(ref_bin, 1), Nt);
+% Two-argument min/max ignore NaN, so only the finite entries are clamped:
+% a trace whose surface is unknown, or whose reference falls off the end of
+% the time axis, has no reference bin at all and must stay that way.
+have_ref = isfinite(ref_bin);
+ref_bin(have_ref) = min(max(ref_bin(have_ref), 1), Nt);
 
 %% Unwrap along fast time, outward from the reference bin
 valid = true(Nt, Nx);
 max_valid_bin = repmat(Nt, 1, Nx);
 
+% Without a reference bin there is no differential column to report, so the
+% whole trace is invalidated rather than referenced to some other bin.
+valid(:,~have_ref)      = false;
+max_valid_bin(~have_ref) = 0;
+
 if phase_is_unwrapped
   Phi = map.phase;
-  valid = coherent;
+  valid = valid & coherent;
 else
   Phi = nan(Nt, Nx);
   % Wrapped first difference along fast time
@@ -86,8 +95,6 @@ else
   for x = 1:Nx
     r = ref_bin(x);
     if ~isfinite(r)
-      valid(:,x) = false;
-      max_valid_bin(x) = 0;
       continue;
     end
     Phi(r,x) = map.phase(r,x);

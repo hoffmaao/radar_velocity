@@ -15,17 +15,25 @@ function S = invertStrainRate(V, blk, opts)
 %
 %     eps_zz(x) = S1 + S2*x,   S1 = 2*c_1/H,   S2 = 6*c_2/H
 %
-%   so S1 is the depth-averaged vertical strain rate over the fitted range
-%   and S2 is its top-to-bottom gradient. c_0 is a nuisance offset: it
-%   absorbs any residual constant in the surface referencing and does not
-%   affect eps_zz. This is the same parameterisation and the same reported
+%   so S1 is the mean vertical strain rate over the NORMALISATION span
+%   0..H (equivalently its value at the midpoint x = 0) and S2 is its
+%   top-to-bottom gradient across that same span. S.epszz_mean is the
+%   separate, and generally different, mean over the range actually fitted,
+%   [top_depth, bot_depth]; the two coincide only when the fit happens to
+%   span exactly 0..H. c_0 is a nuisance offset: it absorbs any residual
+%   constant in the surface referencing and does not affect eps_zz.
+%   This is the same parameterisation and the same reported
 %   quantities (c0/c1/c2, S1, S2, epszz_mean, p_quad) as the earlier EGIG
 %   2011-2012 vertical-strain products, so the two are directly comparable.
 %
 %   WEIGHTING AND DEGREES OF FREEDOM. Samples are weighted by inverse
-%   variance where a per-sample sigma is available (V.v_std), otherwise by
-%   coherence. The reported uncertainty and p_quad use an EFFECTIVE sample
-%   count n_eff = n_used / opts.bins_per_look, because adjacent fast-time
+%   variance where a per-sample sigma is available, otherwise by coherence.
+%   The sigma used is V.v_scatter, the WITHIN-BLOCK scatter, rather than
+%   V.v_std, the standard error of the block mean: the weights are relative
+%   only, and taking the scatter makes a bin's weight reflect its phase
+%   noise rather than how many along-track columns happened to clear the
+%   coverage test. The reported uncertainty and p_quad use an EFFECTIVE
+%   sample count n_eff = n_used / opts.bins_per_look, because adjacent fast-time
 %   bins in a multilooked interferogram are not independent - the fast-time
 %   multilook window and the range resolution correlate them. Treating
 %   every range bin as independent would inflate the degrees of freedom by
@@ -46,8 +54,10 @@ function S = invertStrainRate(V, blk, opts)
 %     S.coef_std    (K+1) x Nblk 1-sigma of the coefficients [m/yr]
 %     S.H           normalisation depth used [m]
 %     S.top_depth, S.bot_depth   fitted depth range [m]
-%     S.S1, S.S2    strain-rate mean and gradient [1/yr]
-%     S.epszz_mean  depth-averaged vertical strain rate [1/yr] (= S1)
+%     S.S1, S.S2    strain-rate mean and gradient over 0..H [1/yr]
+%     S.epszz_mean  mean vertical strain rate over the FITTED range
+%                   [top_depth, bot_depth] [1/yr]; equals S1 only when the
+%                   fit spans exactly 0..H
 %     S.p_quad      two-sided p-value for the quadratic term c_2
 %     S.depth_grid  Nz x Nblk reporting depth grid [m], per block
 %     S.eps_zz      Nz x Nblk strain-rate profile [1/yr]
@@ -96,8 +106,14 @@ for b = 1:Nblk
   d = d(sel);
   v = v(sel);
 
-  % Inverse-variance weights when available, coherence otherwise
-  sd = V.v_std(sel,b);
+  % Inverse-variance weights when available, coherence otherwise. These are
+  % relative weights, so the within-block scatter is used in preference to
+  % the standard error of the block mean (see the header).
+  if isfield(V,'v_scatter')
+    sd = V.v_scatter(sel,b);
+  else
+    sd = V.v_std(sel,b);
+  end
   if any(isfinite(sd) & sd > 0)
     w = 1 ./ max(sd, eps).^2;
     w(~isfinite(w)) = 0;

@@ -35,9 +35,6 @@ P = vdef.firnColumn(par);
 
 twtt = twtt(:);
 Nt = numel(twtt);
-if isscalar(Surface)
-  Surface = repmat(Surface, 1, 1);
-end
 Surface = Surface(:).';
 Nx = numel(Surface);
 

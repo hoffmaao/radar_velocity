@@ -163,6 +163,15 @@ if ~isfield(param.vvel,'bins_per_look') || isempty(param.vvel.bins_per_look)
   param.vvel.bins_per_look = param.vvel.mlook_window(1);
 end
 
+% cols_per_look: along-track correlation length in range lines, the
+% counterpart of bins_per_look. It sets how many of the columns in a block
+% count as independent when the within-block scatter is turned into the
+% 1-sigma of the block mean (dtau_std_blk / dh_std_blk / v_std_blk); the
+% default is the along-track multilook length.
+if ~isfield(param.vvel,'cols_per_look') || isempty(param.vvel.cols_per_look)
+  param.vvel.cols_per_look = param.vvel.mlook_window(2);
+end
+
 % min_fit_range: a block whose VALID depth span comes out shorter than this
 % [m] is dropped after the inversion. Real coherence gaps routinely leave a
 % block reaching only the top few tens of metres, where the fit sees firn

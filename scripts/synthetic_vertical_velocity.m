@@ -95,6 +95,7 @@ opts.fit_bot_depth       = 500;
 opts.norm_depth          = H_norm;
 opts.reg                 = 0;
 opts.bins_per_look       = opts.mlook_window(1);
+opts.cols_per_look       = opts.mlook_window(2);
 opts.min_samples         = 50;
 opts.delta_t             = delta_t;
 opts.densification_rate  = 0;
