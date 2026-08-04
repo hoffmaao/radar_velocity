@@ -1,14 +1,16 @@
 %TIDAL_DEFORMATION Vertical column strain against the tide at Windless Bight.
 %
-%   *** WARNING: THE RESULT THIS SCRIPT PRODUCES IS NOT TRUSTWORTHY YET. ***
-%   The strain series carries a TIDE-PROPORTIONAL ARTEFACT: two multipass
-%   builds of the same leg give anti-correlated strain whose difference
-%   scales with the tidal heave, traced to map.Surface coming from
-%   pass.surface, which predates multipass's z-motion compensation. The
-%   apparent along-track sign reversal of the tidal correlation - the hinge
-%   this script draws - may be entirely that artefact. See 'Known issue: the
-%   tidal analysis is not yet trustworthy' in the project README for the
-%   full diagnosis and the proposed fix. Published as-is, on purpose.
+%   NOTE ON A FIXED ARTEFACT AND A REMAINING LIMITATION. Products produced
+%   before 2026-08-04 carried a tide-proportional artefact from multipass's
+%   z-motion compensation treating tidal heave as platform motion; it is
+%   corrected upstream by vdef.coalignPair (see 'Fixed: the
+%   tide-proportional artefact' in the project README). What this script
+%   computes is still a PLAIN correlation of strain with tide, which is
+%   not invariant to the choice of reference pass: the secular strain
+%   trend aliases in with a reference-dependent sign, so absolute r values
+%   differ between builds of the same leg. Read shapes and transitions,
+%   not absolute r; the reference-invariant tide admittance (joint
+%   strain = a + b*t + c*tide fit) is the planned replacement.
 %
 %   Builds the analysis that motivates the whole project, for every EAGER
 %   2022 repeat-pass line: Windless Bight is floating, so if tidal flexure

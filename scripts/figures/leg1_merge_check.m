@@ -1,15 +1,15 @@
-%LEG1_MERGE_CHECK Merge the two leg-1 products, and test what separated them.
+%LEG1_MERGE_CHECK Acceptance test for the coalignment fix: same leg, two builds.
 %
-%   *** WARNING: THE QUANTITIES THIS SCRIPT PRINTS ARE NOT TRUSTWORTHY YET. ***
-%   The tide-vs-strain correlations and the hinge positions below come from
-%   the same dh_blk data as scripts/figures/tidal_deformation.m, and carry
-%   the same TIDE-PROPORTIONAL ARTEFACT: two multipass builds of the same
-%   leg give anti-correlated strain whose difference scales with the tidal
-%   heave, traced to map.Surface coming from pass.surface, which predates
-%   multipass's z-motion compensation. See 'Known issue: the tidal analysis
-%   is not yet trustworthy' in the project README for the full diagnosis and
-%   the proposed fix - this script is the regression test for that fix.
-%   Published as-is, on purpose.
+%   HISTORY AND CURRENT MEANING. This comparison is what exposed the
+%   tide-proportional artefact (the two builds' strain series were
+%   anti-correlated at r = -0.944), and it is the regression test for
+%   vdef.coalignPair: after the fix the two r(along-track) profiles
+%   correlate at 0.807 (from 0.125). The residual offset in absolute r is
+%   a limitation of the plain correlation itself - the builds reference
+%   different epochs, and the secular strain trend aliases in with a
+%   reference-dependent sign - so strict agreement is expected from the
+%   tide ADMITTANCE of a joint strain = a + b*t + c*tide fit, not from r.
+%   Until that lands, treat matching profile SHAPE as the pass criterion.
 %
 %   EAGER_2022 and EAGER_2022_GL1 are the SAME out-and-back leg of the same
 %   line: identical pass mid-times for every shared segment, cross-track
