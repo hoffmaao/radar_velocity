@@ -1,0 +1,65 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  octave:
+    name: Octave entrypoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The package list is minimal but every entry is load-bearing; the
+      # tests render and save figures, and dropping any one of these makes
+      # them fail on a headless runner:
+      #   gnuplot-nox       the runner has no X display, so Octave disables
+      #                     its qt toolkit at startup and falls back to the
+      #                     gnuplot toolkit. Without gnuplot nothing plots.
+      #                     The -nox build is the right one here: gnuplot
+      #                     only needs X to show a window, not to write PNG.
+      #   fonts-freefont-otf  --no-install-recommends drops the fonts, and
+      #                     Octave's freetype text renderer then aborts with
+      #                     "ft_text_renderer: invalid bounding box" on the
+      #                     first axis label.
+      #   ghostscript       the gnuplot toolkit routes print -dpng through
+      #                     gs, and errors out if it is not on PATH.
+      - name: Install Octave
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            octave gnuplot-nox fonts-freefont-otf ghostscript
+
+      # Both are gitignored, so they are absent in a fresh checkout. The
+      # scripts do create them, but creating them here keeps the tests from
+      # depending on Octave's mkdir parent-directory behaviour.
+      - name: Create output directories
+        run: mkdir -p figs opr_vvel/test/output
+
+      # Each entrypoint is invoked by name from its own directory, because
+      # all three self-locate with mfilename('fullpath') to find +vdef.
+      #
+      # The try/catch is what makes a failed assert fail the job: Octave
+      # does not reliably exit non-zero on an uncaught error, so the exit
+      # status is set explicitly rather than inferred. exit(0) on the
+      # success path keeps a stray warning from being read as a failure.
+      - name: Synthetic vertical velocity (+vdef forward and inverse)
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, synthetic_vertical_velocity; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
+      - name: Surface reference regression
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, test_surface_reference; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
+      - name: vvel_task end to end
+        working-directory: opr_vvel/test
+        run: |
+          octave --no-gui --eval "try, test_vvel_task; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
