@@ -17,6 +17,12 @@ Working and validated:
 - `scripts/synthetic_vertical_velocity.m` - synthesises a repeat-pass SLC
   pair from a known strain rate, runs the whole chain, and asserts
   recovery. Currently recovers S1 to 0.3% and S2 to 1.0% of truth.
+- `scripts/test_surface_reference.m` - regression test for the surface
+  reference bin: a trace whose `Surface` is NaN, or whose reference twtt
+  falls outside the fast-time axis, must be dropped rather than clamped to
+  the first or last bin. Real `pass.surface` carries NaN wherever the
+  surface tracker failed, and a clamped trace comes back fully finite and
+  entirely wrong.
 - `opr_vvel/` - the OPR adapter: `vvel.m`, `vvel_task.m`,
   `vvel_defaults.m`, `vvel_load_multipass.m`, the local/server drivers,
   and `test/test_vvel_task.m`, which builds a synthetic multipass product

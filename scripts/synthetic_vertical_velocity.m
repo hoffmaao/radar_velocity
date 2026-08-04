@@ -160,11 +160,20 @@ set(gca,'YDir','reverse'); ylim([0 550]); grid on;
 xlabel('Relative w (m/yr)'); title('Vertical velocity');
 
 subplot(1,3,3);
-plot(S.eps_zz, S.depth_grid, '-', 'LineWidth', 1.5); hold on;
+% Strain rates here are a few times 1e-3/yr, so plot in units of 1e-3/yr:
+% the raw values give tick labels like '-0.0018' that collide into an
+% unreadable run under the gnuplot backend. Scaling the data beats
+% xticks/xtickformat, which are not portable between MATLAB and Octave.
+eps_scale = 1e3;
 dd = linspace(0,H_norm,100);
-plot(eps_zz_true(dd), dd, 'k--', 'LineWidth', 1.5);
+plot(eps_scale*S.eps_zz, S.depth_grid, '-', 'LineWidth', 1.5); hold on;
+plot(eps_scale*eps_zz_true(dd), dd, 'k--', 'LineWidth', 1.5);
 set(gca,'YDir','reverse'); ylim([0 550]); grid on;
-xlabel('\epsilon_{zz} (1/yr)'); title('Strain rate');
+% Round the x limits out to whole 1e-3/yr so gnuplot lays down a few
+% widely spaced ticks rather than one per 0.2 across a narrow panel.
+eps_all = eps_scale*[S.eps_zz(:); eps_zz_true(dd(:))];   % min/max skip NaN
+xlim([floor(min(eps_all)) ceil(max(eps_all))]);
+xlabel('\epsilon_{zz} (10^{-3} /yr)'); title('Strain rate');
 legend('inverted','truth','Location','SouthWest');
 
 out_fn = fullfile(fig_dir,'synthetic_vertical_velocity.png');

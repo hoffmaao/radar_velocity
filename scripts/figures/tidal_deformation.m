@@ -1,4 +1,15 @@
 %TIDAL_DEFORMATION Vertical column strain against the tide at Windless Bight.
+%
+%   *** WARNING: THE RESULT THIS SCRIPT PRODUCES IS NOT TRUSTWORTHY YET. ***
+%   The strain series carries a TIDE-PROPORTIONAL ARTEFACT: two multipass
+%   builds of the same leg give anti-correlated strain whose difference
+%   scales with the tidal heave, traced to map.Surface coming from
+%   pass.surface, which predates multipass's z-motion compensation. The
+%   apparent along-track sign reversal of the tidal correlation - the hinge
+%   this script draws - may be entirely that artefact. See 'Known issue: the
+%   tidal analysis is not yet trustworthy' in the project README for the
+%   full diagnosis and the proposed fix. Published as-is, on purpose.
+%
 %   Builds the analysis that motivates the whole project, for every EAGER
 %   2022 repeat-pass line: Windless Bight is floating, so if tidal flexure
 %   strains the ice column then the vertical strain measured between repeat
