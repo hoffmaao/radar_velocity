@@ -22,6 +22,13 @@ strain rate `eps_zz` versus depth and along-track position, using the
    `vdef.verticalDisplacement` -> `vdef.invertStrainRate` - which reads
    its options directly off the `param.vvel` struct and is equally
    callable from standalone scripts and tests. Per pass PAIR,
+   - coalignment (`vdef.coalignPair`): the residual bulk fast-time shift
+     between the two slices is measured from the cross-spectrum group
+     delay around the surface return and removed, envelope and carrier.
+     On floating ice `multipass`'s z-motion compensation treats tidal
+     heave as platform motion and misaligns the pair in proportion to the
+     tide; this step undoes what survives of that shift (see the project
+     README for the full mechanism and history),
    - a multilooked interferogram and coherence from the two coregistered
      SLC slices, cross product formed per pixel and only then averaged,
    - the interferogram phase unwrapped along fast time outward from the
@@ -120,17 +127,20 @@ whereas `epszz_mean` is the mean over the range actually fitted,
 `fit_top_depth` to `fit_bot_depth`. The two agree only when the fit spans
 exactly `0..norm_depth`, which the production settings do not.
 
-## Known issue affecting downstream analysis
+## A fixed artefact worth knowing about
 
-The chain runs cleanly on the real products, but the tidal analysis built
-on it is not yet trustworthy: two `multipass` builds of the same traverse
-leg with the same passes give anti-correlated strain, and the difference
-scales with the tide. The leading hypothesis is that `map.Surface` comes
-from `pass.surface`, which predates `multipass`'s per-pass z-motion
-compensation, so the surface reference bin and the coregistered data are
-offset by the tidal heave itself. See the project README for the numbers
-and the proposed fix. Nothing in this module's own tests covers it, which
-is exactly why it went unnoticed.
+Products produced before 2026-08-04 carried a tide-proportional strain
+artefact: `multipass`'s z-motion compensation advances each pass by
+`ref_z/(c/2)`, which on floating ice treats tidal heave as platform
+motion and misaligns the pair slices by up to two range bins. The
+coalignment step above is the fix, and `test/test_vvel_task.m` injects
+exactly this artefact and asserts its removal to picosecond level. Two
+details worth remembering: interferometric coherence never revealed the
+misalignment (the returns are layered rather than pure speckle, so phase
+corrupted while coherence stayed high), and the products archived as
+`CSARP_vvel*_precoalign` on the server scratch preserve the pre-fix state
+for comparison. Full mechanism, measurements, and remaining analysis
+caveats: 'Fixed: the tide-proportional artefact' in the project README.
 
 ## Running the test
 

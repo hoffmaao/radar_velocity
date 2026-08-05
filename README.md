@@ -38,33 +38,55 @@ Not yet done:
 
 - `docker-compose.yml` - the MATLAB container.
 
-### Known issue: the tidal analysis is not yet trustworthy
+### Fixed: the tide-proportional artefact (2026-08-04)
 
-`scripts/figures/tidal_deformation.m` correlates the vertical column
-strain against the tide, and the correlation appeared to reverse sign
-along track - a flexure hinge. **Do not rely on that result yet.**
+The tidal analysis originally carried a tide-proportional artefact: two
+`multipass` builds of the SAME traverse leg gave anti-correlated strain
+(r = -0.944), with a difference proportional to the tide (about 57 mm of
+apparent column displacement per metre of heave).
 
-Two `multipass` builds of the SAME traverse leg, with the same passes,
-give per-block strain series that are ANTI-correlated (r = -0.944), and
-the difference between them is proportional to the tide (r = 0.968, 569
-microstrain per metre of heave - about 57 mm of apparent displacement over
-a 100 m column per metre of tide). Pass selection is not the cause:
-dropping the one pass that differs between the two builds changes nothing.
-The tide input itself is identical between builds up to a constant offset.
+**Mechanism, confirmed from source and from the data.** `multipass`
+comp_mode 3 motion-compensates each pass's FCS z-motion by advancing it
+`ref_z/(c/2)` in fast time (multipass.m:512-522, envelope and phase), and
+`pass.surface` is never updated for the shift (`layers.twtt_ref`
+explicitly is, line 667-669). On grounded ice `ref_z` is platform motion
+and the compensation is right. On the floating shelf the platform and the
+surface ride the tide together, so `ref_z` is essentially the tide and
+the compensation displaces the returns by an amount that never was a
+range change. Measured by cross-spectrum group delay at the surface, the
+residual misalignment between pair slices reaches 7 ns (about two range
+bins) and runs at 1.2-1.3 times `-(ref_z_sec - ref_z_ref)/(c/2)` -
+slightly more than the full erroneous compensation survives to the
+product. (An earlier envelope-correlation diagnostic reported far smaller
+residuals; parabolic peak interpolation on a one-bin speckle correlation
+peak underestimates sub-bin shifts several-fold, which is why the
+estimator in the fix is a group delay, not a peak fit.)
 
-Leading hypothesis: `map.Surface` is taken from `pass.surface`, which is
-the FCS surface twtt recorded BEFORE `multipass` motion-compensates each
-pass's FCS z-motion by a time shift of `ref_z/(c/2)`. `ref_z` is platform
-height relative to the main pass, which on a floating shelf is essentially
-the tide. The surface reference bin and the coregistered data would then
-be offset from each other in proportion to the tidal heave, with a sign
-set by which pass is the reference - which matches every feature of the
-signature.
+**The fix** is `vdef.coalignPair`, applied per pair in `vvel_task` before
+the interferogram: measure the bulk shift empirically from the data and
+remove it, envelope and carrier. Empirical rather than the deterministic
+inverse because the surviving fraction is not exactly one. Validated on
+synthetics (injected bulk delays of 0.7-2.2 ns recovered to 11 ps or
+better; strain recovery unchanged) and recorded in every product as
+`dtau_bulk` / `dtau_bulk_pred` / `coalign_quality` / `coalign_applied`.
 
-Fix to try: derive `Surface` by tracking the surface return in the
-coregistered `data` itself, per pass slice, rather than trusting
-`pass.surface`. `scripts/figures/leg1_merge_check.m` is the regression
-test for it: two builds of the same leg must agree.
+**What the leg-1 comparison says now**
+(`scripts/figures/leg1_merge_check.m`): the two builds' tidal-response
+profiles went from uncorrelated (0.125) to correlated in shape (0.807),
+but an offset in absolute r remains. That residual is an ANALYSIS
+limitation, not a processing one: the two builds reference different
+epochs (2022-12-09 vs 2022-12-12), and a plain correlation is invariant
+to the constant strain offset but not to the secular trend, which enters
+with a reference-dependent sign. The reference-invariant quantity is the
+tide admittance from a joint strain = a + b*t + c*tide fit, which is the
+planned next step for both the analysis and the acceptance test.
+
+**Interpretation caveats that remain**: the five products are four legs
+of ONE line (120-145 m apart, walked ~24 min apart), not independent
+lines; and the post-fix hinge position (GL1/GL2 cross from strongly
+positive to negative ~3.3 km along, within ~1 km of the mapped MEaSUREs
+grounding line) should be read from the joint-fit admittance once that
+lands, not from the plain correlation.
 
 ## Target data
 
@@ -122,6 +144,11 @@ reported strain rates and velocities are converted to per-year.
   and pinned at `rho_sfc` / `rho_bco`, plus refractive index (Kovacs or
   Looyenga) and the vertical twtt table.
 - `vdef.depthFromTwtt` - twtt below the surface to depth and local `n`.
+- `vdef.coalignPair` - measures the residual bulk fast-time shift between
+  a pair by cross-spectrum group delay in a surface window and removes it,
+  envelope and carrier, before the interferogram. This is the fix for the
+  tide-proportional artefact; see 'Fixed: the tide-proportional artefact'
+  above for the mechanism and the estimator rationale.
 - `vdef.multilook` - boxcar interferogram and coherence from a coregistered
   SLC pair. Cross product per pixel, averaged after - never the reverse.
 - `vdef.differentialRange` - interferogram phase to `dtau(twtt, x)`,

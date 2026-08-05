@@ -107,21 +107,29 @@ gamma(~isfinite(gamma)) = 0;
 
 s_main = bsxfun(@times, amp, (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2));
 
+% Per-pass BULK time shifts, simulating the residual of multipass's z-motion
+% compensation on a floating shelf (the tide-proportional artefact). These
+% are a whole-slice delay, envelope and carrier, exactly the form
+% multipass.m:512-522 applies - and exactly what vdef.coalignPair must
+% measure and remove. Sub-bin magnitudes matching the real residuals.
+tau_bulk_true = [0, 0.7e-9, -0.9e-9, 1.3e-9];   % [s] per pass
+
 en_idxs = find(pass_en);
 data = complex(zeros(Nt, Nx, numel(en_idxs), 'single'));
 for kk = 1:numel(en_idxs)
   k = en_idxs(kk);
   if k == 1
-    data(:,:,kk) = single(s_main);
+    data(:,:,kk) = single(apply_bulk_delay(s_main, tau_bulk_true(k), fc, fs));
     continue;
   end
   % Matched-filter convention: a delay dtau multiplies by exp(-1i*2*pi*fc*dtau)
   dtau_map = dtau_per_year * (dt_x{k} / C.sec_per_year);
   carrier  = exp(-1i*2*pi*fc*dtau_map);
   indep    = bsxfun(@times, amp, (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2));
-  data(:,:,kk) = single(bsxfun(@times, sqrt(gamma), carrier) .* s_main ...
-    + bsxfun(@times, sqrt(max(1-gamma,0)), indep));
-  clear dtau_map carrier indep;
+  slice = bsxfun(@times, sqrt(gamma), carrier) .* s_main ...
+    + bsxfun(@times, sqrt(max(1-gamma,0)), indep);
+  data(:,:,kk) = single(apply_bulk_delay(slice, tau_bulk_true(k), fc, fs));
+  clear dtau_map carrier indep slice;
 end
 clear s_main;
 
@@ -259,6 +267,17 @@ for sec_idx = [3 4]
   assert(max(abs(out.baseline_z - (baseline_z(sec_idx) - baseline_z(1)))) < 1e-6, ...
     'vertical baseline is wrong');
 
+  % Coalignment: the injected per-pass bulk delay (the tide-proportional
+  % artefact of multipass's z-motion compensation) must be measured to well
+  % under a bin and recorded in the product
+  expect_bulk = tau_bulk_true(sec_idx) - tau_bulk_true(1);
+  assert(out.coalign_applied, 'coalignment did not run for pair 1->%d', sec_idx);
+  fprintf('coalign: measured %.3f ns, injected %.3f ns (quality %.2f)\n', ...
+    out.dtau_bulk*1e9, expect_bulk*1e9, out.coalign_quality);
+  assert(abs(out.dtau_bulk - expect_bulk) < 0.25e-9, ...
+    'pair 1->%d: coalign measured %.3f ns against an injected %.3f ns', ...
+    sec_idx, out.dtau_bulk*1e9, expect_bulk*1e9);
+
   % Strain rate
   assert(all(isfinite(out.S1)), 'not every block was inverted');
   S1_err = mean(out.S1) - S1_true;
@@ -331,4 +350,37 @@ fprintf('\n3 -> 4 pair (neither is the main pass): S1 error %+.3e /yr (%.1f%%)\n
 assert(abs(S1_err34) < tol_S1*abs(S1_true), ...
   'pair 3->4: S1 not recovered within %.0f%%', 100*tol_S1);
 
+% Coalignment on a pair where neither slice is the main pass: the bulk
+% delays do not cancel, so this exercises the differencing too
+expect_bulk34 = tau_bulk_true(4) - tau_bulk_true(3);
+assert(out34.coalign_applied, 'coalignment did not run for pair 3->4');
+fprintf('coalign 3->4: measured %.3f ns, injected %.3f ns (quality %.2f)\n', ...
+  out34.dtau_bulk*1e9, expect_bulk34*1e9, out34.coalign_quality);
+assert(abs(out34.dtau_bulk - expect_bulk34) < 0.25e-9, ...
+  'pair 3->4: coalign measured %.3f ns against an injected %.3f ns', ...
+  out34.dtau_bulk*1e9, expect_bulk34*1e9);
+
+%% Coalignment rejects a decorrelated pair rather than applying noise
+% =====================================================================
+% Two INDEPENDENT speckle fields share no signal, so the surface-window
+% cross-spectrum phase slope is noise: quality lands near 1/sqrt(Npairs)
+% (about 0.13 for the default window), far below the coalign_min_quality
+% floor, and the estimate must be rejected with the secondary returned
+% bit-identical instead of shifted by a spurious bulk delay.
+rand('seed', 13); randn('seed', 13);   %#ok<RAND>
+noise_a = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);
+noise_b = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);
+param_n = vvel_defaults(param);
+[noise_out, info_n] = vdef.coalignPair(noise_a, noise_b, ...
+  struct('Time', Time, 'Surface', Surface*ones(1,Nx), 'fc', fc), param_n.vvel);
+fprintf('coalign noise-only: quality %.3f, applied %d\n', info_n.quality, info_n.applied);
+assert(~info_n.applied, 'a decorrelated pair must be rejected, not coaligned');
+assert(isnan(info_n.dtau_bulk), 'a rejected pair must report dtau_bulk = NaN');
+assert(isfinite(info_n.quality) && info_n.quality < param_n.vvel.coalign_min_quality, ...
+  'a noise-only window must measure quality below the floor (got %.3f)', info_n.quality);
+assert(isequal(noise_out, noise_b), ...
+  'a rejected secondary must come back bit-identical');
+clear noise_a noise_b noise_out;
+
 fprintf('\nPASS (%.1f s)\n', toc(t0));
+

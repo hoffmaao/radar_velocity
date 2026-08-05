@@ -170,6 +170,36 @@ opts.delta_t = delta_t;
 
 s_ref = data(:,:,k_ref);
 s_sec = data(:,:,k_sec);
+
+% Coalignment: remove the residual bulk fast-time shift between the two
+% slices before the interferogram. multipass motion-compensates each pass
+% by ref_z/(c/2); on a floating shelf ref_z is essentially the tide, not a
+% platform-to-surface range change, so the compensation misaligns the pair
+% in proportion to the tide and the misalignment leaks into the inferred
+% strain (~57 mm of apparent column displacement per metre of tide when
+% this was left uncorrected). See vdef.coalignPair for the mechanism.
+coalign = struct('dtau_bulk', NaN, 'quality', NaN, 'applied', false);
+% multipass ADVANCES each pass by ref_z/(c/2) (spectrum times
+% exp(+1i*2*pi*f*ref_z/(c/2)), multipass.m:515-522), so if none of that
+% shift were absorbed downstream the secondary would trail the reference
+% by MINUS the baseline: predicted = -(ref_z_sec - ref_z_ref)/(c/2).
+% Measured values on the EAGER products come out at 1.2-1.3 times this,
+% so slightly more than the full erroneous compensation survives.
+dtau_bulk_pred = -mean(baseline_z, 'omitnan') / (c/2);
+if param.vvel.coalign_en
+  [s_sec, coalign] = vdef.coalignPair(s_ref, s_sec, ...
+    struct('Time', Time, 'Surface', Surface, 'fc', fc), param.vvel);
+  if coalign.applied
+    fprintf('Coalign: removed %.3f ns bulk shift (predicted from ref_z: %.3f ns; quality %.2f)\n', ...
+      coalign.dtau_bulk*1e9, dtau_bulk_pred*1e9, coalign.quality);
+  else
+    warning('Coalignment failed for pair %s; proceeding on the unaligned pair. The tide-proportional artefact is NOT corrected for this pair.', pair_id);
+  end
+end
+dtau_bulk       = coalign.dtau_bulk;
+coalign_quality = coalign.quality;
+coalign_applied = coalign.applied;
+
 [igram, coh] = vdef.multilook(s_ref, s_sec, opts.mlook_window);
 clear s_ref s_sec;
 
@@ -391,6 +421,7 @@ opr_save(out_fn,'eps_zz','depth_grid','v_fit','S1','S2','epszz_mean','p_quad', .
   'coh_blk','coverage_blk','block_starts', ...
   'depth_blk','dh_blk','dh_std_blk','v_blk','v_std_blk','n_local', ...
   'densification_applied','phase_sign','max_valid_bin','block_short', ...
+  'dtau_bulk','dtau_bulk_pred','coalign_quality','coalign_applied', ...
   'delta_t','delta_t_sec','delta_t_blk','delta_t_spread_sec', ...
   'baseline_y','baseline_z','fc','Time','Surface','GPS_time', ...
   'Latitude','Longitude','Elevation','Along_track', ...
