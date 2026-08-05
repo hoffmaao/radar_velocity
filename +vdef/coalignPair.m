@@ -14,37 +14,88 @@ function [s_sec, info] = coalignPair(s_ref, s_sec, map, opts)
 %   FLOATING shelf the platform and the surface ride the tide together,
 %   the antenna-to-surface range does not change, and ref_z is essentially
 %   the tide - so the compensation displaces the returns by a
-%   tide-proportional amount that never was a range change. Measured with
-%   this estimator on the EAGER 2022 products, the residual misalignment
-%   reaches 7 ns (about 2 range bins) and runs at 1.2-1.3 times
-%   -(ref_z_sec - ref_z_ref)/(c/2), i.e. slightly MORE than the full
-%   erroneous compensation survives to the product. It contaminated the
-%   inferred strain at roughly 57 mm of apparent column displacement per
-%   metre of tide before this fix.
+%   tide-proportional amount that never was a range change.
+%
+%   WHETHER ANY OF THAT SURVIVES INTO A GIVEN PRODUCT DEPENDS ON ITS
+%   CALIBRATION. multipass's own param.multipass.coregistration_time_shift
+%   applies a per-pass fast-time shift derived from the comp_mode 2
+%   coregistration stage, and it removes this misalignment as a side
+%   effect. Measured on the EAGER 2022 products: EAGER_2022 and GL4 carry
+%   coregistration_time_shift of ALL ZEROS and show the full residual
+%   (0.97-1.07 times -(ref_z_sec - ref_z_ref)/(c/2)); GL1, GL2 and GL3
+%   carry nonzero shifts of up to 2 bins and are already aligned to better
+%   than half a nanosecond. So this correction is a REPAIR for
+%   uncoregistered products, and on a properly coregistered one it must
+%   measure ~0 and do nothing. An estimator that injects noise where the
+%   truth is zero corrupts the good products, which is exactly what the
+%   previous group-delay estimator did (see THE ESTIMATOR below).
 %
 %   The correction is EMPIRICAL, from the data itself, rather than the
-%   deterministic inverse: the surviving fraction is not exactly one and
-%   is not knowable in advance, and an empirical measure also absorbs any
-%   per-pair coregistration_time_shift applied upstream.
+%   deterministic inverse: how much survives depends on the product's
+%   coregistration_time_shift, which is not knowable from ref_z alone.
 %
-%   THE ESTIMATOR is the group delay from the phase slope of the
-%   cross-spectrum of the two windows: for b(t) = a(t - tau),
-%   P(f) = B(f) conj(A(f)) = |A(f)|^2 exp(-1i*2*pi*f*tau), so consecutive
-%   frequency bins step in phase by -2*pi*df*tau. Summing
-%   P(f+df) conj(P(f)) over the band and over traces gives tau from a
-%   single angle, unambiguous over +/- W*dt/2 (window length W). This is
-%   deliberately NOT a parabolic refinement of the envelope correlation
-%   peak: on speckle the correlation peak is about one bin wide, and a
-%   parabola through three integer-lag samples of a one-bin peak
-%   underestimates sub-bin shifts several-fold. The carrier phase
-%   exp(-1i*2*pi*fc*tau) is constant across the band and cancels in the
-%   slope, as does any spectral shape common to the two slices.
+%   KNOWN LIMITATION - this removes ONE SCALAR PER PAIR, and the real
+%   misalignment varies ALONG TRACK. ref_z is a per-column vector, and on
+%   the EAGER pairs its 5th-to-95th-percentile spread within a single pair
+%   reaches 1.1 m, i.e. 7.4 ns or over two range bins - larger than the
+%   mean offset the scalar removes. The two passes traverse the line at
+%   different times and sometimes in opposite directions, so the tide
+%   changes by different amounts at each end. A scalar can only take out
+%   the mean, and what is left is a spatially varying, tide-proportional
+%   residual. Measured on the leg-1 acceptance comparison, this correction
+%   cuts the build-to-build artefact from 302 to 82 microstrain per metre
+%   of tide; the remainder tracks that along-track structure (per-block
+%   slopes running -19 to -134). Making the estimate per-column, or per
+%   along-track block, is the known next step.
+%
+%   THE ESTIMATOR is the normalised cross-correlation of the two slices'
+%   TRACE-AVERAGED POWER profiles over a window around the surface,
+%   FFT-upsampled by opts.coalign_upsample so the peak is located to a
+%   fraction of a bin without a parabolic fit.
+%
+%   Why the trace average is well conditioned: a single trace's envelope
+%   is speckle and its correlation peak is about one bin wide, which is
+%   what made a parabolic peak fit underestimate sub-bin shifts several
+%   fold. Averaging |s|^2 over the ~2000 along-track columns first leaves
+%   the smooth pulse shape of the surface return. The surface twtt does
+%   vary along track, which smears that average - but both slices are
+%   resampled onto the SAME along-track axis by multipass, so the smearing
+%   is common to the two profiles and cancels in their cross-correlation.
+%
+%   Why not the cross-spectrum group delay used before: on the EAGER
+%   products it ran 1.2-1.3 times the true residual on the uncoregistered
+%   product and returned up to 8.5 ns of pure noise on the coregistered
+%   ones, where the truth is ~0, all at quality 0.965-1.000. The envelope
+%   correlation reproduces the truth at ratio 0.97-1.07 on the former and
+%   stays inside +/-0.9 ns on the latter.
+%
+%   Why the envelope rather than the carrier: at fc = 750 MHz one carrier
+%   cycle is 1.33 ns, so the 5 ns shifts seen here span about four cycles
+%   and the carrier phase alone cannot resolve them. The misalignment is a
+%   genuine full time shift, so the envelope determines it, and the
+%   correction is then applied to envelope and carrier together.
+%
+%   THE LAG BOUND IS LOAD-BEARING, not a formality. The trace-averaged
+%   surface profile carries a range sidelobe of the transmit pulse at
+%   about +/-5.4 bins, at 0.37-0.55 of the main peak in every EAGER pair.
+%   On one pair (GL1 / 20221211_07) that sidelobe outranked the true peak
+%   and produced a -19 ns estimate against a true 0.8 ns. A peak-dominance
+%   test does NOT separate these cases: that pair's peak-to-sidelobe ratio
+%   was 1.8 while a correctly measured pair (GL1 / 20221211_01) sat at
+%   1.03. What does separate them is physics - the residual cannot exceed
+%   the tidal range over c/2 (about 3 bins here) plus whatever
+%   coregistration_time_shift left, so opts.coalign_max_lag defaults to
+%   3 bins, comfortably above every true shift measured (max 1.75 bins)
+%   and safely inside the 5.4-bin sidelobe. A peak found AT the search
+%   boundary is rejected rather than clamped, since the true peak may lie
+%   outside the credible range.
 %
 %   map fields: .Time (Nt x 1) [s], .Surface (1 x Nx) [s], .fc [Hz]
 %   opts fields (defaults in opr_vvel/vvel_defaults.m):
-%     .coalign_max_lag      largest credible shift [bins]; a larger
-%                           estimate is rejected as a failed measurement
+%     .coalign_max_lag      largest credible shift [bins]; a peak at or
+%                           beyond this is rejected as a failed measurement
 %     .coalign_half_win     half-width of the surface window [bins]
+%     .coalign_upsample     cross-correlation upsampling factor
 %     .coalign_min_quality  minimum info.quality for the estimate to be
 %                           applied; below it the measurement is rejected
 %                           as noise and the pair is left unaligned
@@ -52,8 +103,9 @@ function [s_sec, info] = coalignPair(s_ref, s_sec, map, opts)
 %   Returns:
 %     s_sec            the secondary, advanced by the measured delay
 %     info.dtau_bulk   measured extra delay of sec relative to ref [s]
-%     info.quality     phase-slope consistency of the cross-spectrum, in
-%                      [0..1]; low values mean the estimate is noise
+%     info.quality     normalised correlation at the peak, in [0..1]
+%     info.peak_ratio  sidelobe-to-peak ratio, for QC only - see above for
+%                      why it must not be used as an acceptance gate
 %     info.applied     false when no reliable estimate was possible; the
 %                      secondary is then returned unchanged and dtau_bulk
 %                      is NaN. A quality-floor rejection still reports the
@@ -67,14 +119,19 @@ function [s_sec, info] = coalignPair(s_ref, s_sec, map, opts)
 %
 %   See also vdef.multilook, vdef.differentialRange.
 
-info = struct('dtau_bulk', NaN, 'quality', NaN, 'applied', false);
+info = struct('dtau_bulk', NaN, 'quality', NaN, 'peak_ratio', NaN, 'applied', false);
 
 Time = map.Time(:);
 Nt = size(s_ref, 1);
 dt = Time(2) - Time(1);
-maxlag  = max(1, round(opts.coalign_max_lag));
+maxlag  = max(1, opts.coalign_max_lag);
 halfwin = max(4, round(opts.coalign_half_win));
 minq    = opts.coalign_min_quality;
+if isfield(opts,'coalign_upsample') && ~isempty(opts.coalign_upsample)
+  UP = max(1, round(opts.coalign_upsample));
+else
+  UP = 32;
+end
 
 sfc = mean(map.Surface, 'omitnan');
 if ~isfinite(sfc)
@@ -93,52 +150,70 @@ if W < 16
   return;
 end
 
-% Complex fields in the surface window, tapered so the window edges do not
-% leak into the cross-spectrum phase; non-finite samples contribute zero
-a = double(s_ref(win,:));
-b = double(s_sec(win,:));
-a(~isfinite(a)) = 0;
-b(~isfinite(b)) = 0;
+% Trace-averaged power profiles, mean-removed so the correlation is not
+% dominated by the DC pedestal, and tapered so the window edges do not ring
 taper = 0.5 - 0.5*cos(2*pi*(0:W-1).'/(W-1));   % hann, no toolbox dependency
-Fa = fft(bsxfun(@times, a, taper));
-Fb = fft(bsxfun(@times, b, taper));
-P = sum(Fb .* conj(Fa), 2);                    % cross-spectrum over traces
+p_ref = trace_mean_power(s_ref(win,:), taper);
+p_sec = trace_mean_power(s_sec(win,:), taper);
 
-if ~any(isfinite(P)) || ~any(abs(P) > 0)
+den = sqrt(sum(p_ref.^2) * sum(p_sec.^2));
+if ~(den > 0) || ~all(isfinite([p_ref; p_sec]))
   warning('coalignPair: empty surface window; pair left unaligned.');
   return;
 end
 
-% Group delay from the phase step between consecutive frequency bins.
-% Pairs near the Nyquist wrap (the middle of fft order) are EXCLUDED: the
-% delay was applied over the whole record, not cyclically over the window,
-% so the phase ramp is discontinuous across the band edge, and window
-% leakage concentrates enough magnitude there to drag the vector average
-% several-fold (verified: without the guard an injected 1.30 ns measured
-% as 0.27 ns; with it, 1.299-1.300 ns across the tested range).
-pp = P(2:end) .* conj(P(1:end-1));
-kpair = (1:W-1).';
-keep = abs(kpair - W/2) > 0.15*W;
-q = sum(pp(keep));
-dfw = 1/(W*dt);
-dtau = -angle(q) / (2*pi*dfw);
-quality = abs(q) / max(sum(abs(pp(keep))), eps);
+% Cross-correlation, upsampled by zero-padding the cross-spectrum
+Nfft = 2^nextpow2(2*W);
+X  = fft(p_sec, Nfft) .* conj(fft(p_ref, Nfft));
+Xu = zeros(Nfft*UP, 1);
+h  = Nfft/2;
+Xu(1:h)         = X(1:h);
+Xu(end-h+1:end) = X(h+1:end);
+xc = real(ifft(Xu)) * UP / den;
 
-if ~isfinite(dtau)
-  warning('coalignPair: group delay estimate is not finite; pair left unaligned.');
+lags = ifftshift((-Nfft*UP/2 : Nfft*UP/2-1).') / UP;
+[lags, ord] = sort(lags);
+xc = xc(ord);
+
+sel = abs(lags) <= maxlag;
+if ~any(sel)
+  warning('coalignPair: no lags within the %.2f bin credibility bound; pair left unaligned.', maxlag);
   return;
 end
-if quality < minq
-  warning('coalignPair: cross-spectrum quality %.2f is below the %.2f floor; pair left unaligned.', ...
-    quality, minq);
-  info.quality = quality;
+lag_in = lags(sel);
+xc_in  = xc(sel);
+[peak, im] = max(xc_in);
+dtau_bins = lag_in(im);
+
+if ~isfinite(dtau_bins) || ~isfinite(peak)
+  warning('coalignPair: cross-correlation peak is not finite; pair left unaligned.');
   return;
 end
-if abs(dtau) > maxlag*dt
-  warning('coalignPair: measured %.2f ns exceeds the %.2f ns credibility bound; pair left unaligned.', ...
-    dtau*1e9, maxlag*dt*1e9);
+
+if peak < minq
+  warning('coalignPair: surface correlation %.2f is below the %.2f floor; pair left unaligned.', ...
+    peak, minq);
+  info.quality = peak;
   return;
 end
+
+% A peak sitting on the edge of the search means the true shift may lie
+% outside the credible range; that is a failed measurement, not a clamp
+if abs(dtau_bins) >= maxlag - 1/UP
+  warning('coalignPair: peak at %.2f bins sits on the %.2f bin credibility bound, so the true shift may be outside it; pair left unaligned.', ...
+    dtau_bins, maxlag);
+  return;
+end
+
+% Highest competing local maximum, reported for QC only. Measured over a
+% window WIDER than the search bound: the sidelobe worth knowing about
+% sits at about +/-5.4 bins, outside the 3-bin bound that deliberately
+% excludes it, so a ratio computed only inside the bound would almost
+% always come back NaN and tell nobody anything.
+qc_sel = abs(lags) <= max(2*maxlag, 8);
+info.peak_ratio = sidelobe_ratio(xc(qc_sel), lags(qc_sel), dtau_bins, peak);
+
+dtau = dtau_bins * dt;
 
 % Advance the secondary by the measured delay: envelope through the
 % baseband spectrum, carrier phase at fc
@@ -148,7 +223,32 @@ s_sec = ifft(bsxfun(@times, fft(double(s_sec)), exp(1i*2*pi*f_bb*dtau))) ...
   * exp(1i*2*pi*map.fc*dtau);
 
 info.dtau_bulk = dtau;
-info.quality   = quality;
+info.quality   = peak;
 info.applied   = true;
 
+end
+
+%% ========================================================================
+function p = trace_mean_power(s, taper)
+% Mean power over the along-track columns, mean-removed and tapered.
+% Non-finite samples are ignored rather than zeroed, so a column with a
+% dropout does not pull the profile toward zero at that bin.
+p = mean(abs(double(s)).^2, 2, 'omitnan');
+p(~isfinite(p)) = 0;
+p = (p - mean(p)) .* taper;
+end
+
+%% ========================================================================
+function r = sidelobe_ratio(xc, lags, peak_lag, peak)
+% Height of the tallest local maximum that is not the main peak, relative
+% to the peak. Local maxima within half a bin of the peak lag are part of
+% the main lobe, not competitors, so they are excluded by position rather
+% than by index.
+r = NaN;
+if ~(peak > 0), return; end
+isloc = false(size(xc));
+isloc(2:end-1) = xc(2:end-1) > xc(1:end-2) & xc(2:end-1) > xc(3:end);
+isloc = isloc & abs(lags - peak_lag) > 0.5;
+if ~any(isloc), return; end
+r = max(xc(isloc)) / peak;
 end

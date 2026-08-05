@@ -114,30 +114,52 @@ if ~isfield(param.vvel,'coalign_en') || isempty(param.vvel.coalign_en)
   param.vvel.coalign_en = true;
 end
 
-% coalign_max_lag: credibility bound on the measured shift [bins]. The
-% real residuals on the EAGER 2022 products reach ~7 ns (about 2 bins), so
-% 10 bins is generous; a larger estimate is rejected as a failed
-% measurement rather than applied.
+% coalign_max_lag: credibility bound on the measured shift [bins]. This is
+% NOT a formality - the trace-averaged surface profile carries a range
+% sidelobe at about +/-5.4 bins at 0.37-0.55 of the main peak, and on one
+% EAGER pair (GL1 / 20221211_07) that sidelobe outranked the true peak and
+% produced a -19 ns estimate against a true 0.8 ns. The bound is what keeps
+% the search inside it. 3 bins is above the tidal range over c/2 (~3 bins)
+% and well above every true shift measured on these products (max 1.75
+% bins). A peak found ON the bound is rejected, not clamped. Raise this
+% only with evidence that the real shift is larger, and check where the
+% sidelobe sits first. See vdef.coalignPair.
 if ~isfield(param.vvel,'coalign_max_lag') || isempty(param.vvel.coalign_max_lag)
-  param.vvel.coalign_max_lag = 10;
+  param.vvel.coalign_max_lag = 3;
 end
 
-% coalign_half_win: half-width of the surface search window [bins]. Wide
-% enough to hold the surface return and its immediate sidelobes; the
-% 0.043 bin scatter of the diagnostic used this same 40-bin half-width.
+% coalign_half_win: half-width of the surface window [bins]. 60 is the
+% width the estimator was validated at on the EAGER products (ratio
+% 0.97-1.07 against the known residual on the uncoregistered products,
+% within +/-0.9 ns of zero on the coregistered ones).
 if ~isfield(param.vvel,'coalign_half_win') || isempty(param.vvel.coalign_half_win)
-  param.vvel.coalign_half_win = 40;
+  param.vvel.coalign_half_win = 60;
 end
 
-% coalign_min_quality: floor on the cross-spectrum phase-slope consistency
+% coalign_upsample: FFT upsampling factor for the cross-correlation peak.
+% 32 puts the quantisation at dt/32 (0.10 ns at fs = 300 MHz), about 2% of
+% a typical 5 ns residual. Upsampling rather than a parabolic fit because a
+% parabola through integer lags of a narrow peak biases sub-bin shifts low.
+if ~isfield(param.vvel,'coalign_upsample') || isempty(param.vvel.coalign_upsample)
+  param.vvel.coalign_upsample = 32;
+end
+
+% coalign_min_quality: floor on the normalised surface-profile correlation
 % (info.quality) below which the measured shift is rejected as noise and
-% the pair is left unaligned. The floor separates cleanly: real pairs
-% measure about 1.00, synthetic pairs at gamma 0.8 about 0.99, and a
-% decorrelated (noise-only) surface window about 1/sqrt(Npairs), which is
-% about 0.13 for the default window - so 0.5 sits well clear of both
-% populations. Without it, a failed measurement is uniform noise over the
-% unambiguous range and can land inside coalign_max_lag, applying a
-% spurious bulk shift far larger than the artefact being removed.
+% the pair is left unaligned.
+%
+% NOTE this measures something different from the phase-slope consistency
+% the previous group-delay estimator reported, so the old calibration of
+% this floor does not carry over. The estimator correlates TRACE-AVERAGED
+% POWER, which is insensitive to interferometric coherence - a fully
+% decorrelated pair over the same surface still has a well-defined
+% envelope position, and measuring it is correct, not a failure. What does
+% drive the quality down is a window with no coherent surface return in
+% it at all, where both profiles are flat noise. Real EAGER pairs measure
+% 0.778-1.000; two independent noise fields land far below. 0.5 sits
+% between those populations. Without the floor, a failed measurement is
+% noise over the search range and can land inside coalign_max_lag,
+% applying a spurious bulk shift larger than the artefact being removed.
 if ~isfield(param.vvel,'coalign_min_quality') || isempty(param.vvel.coalign_min_quality)
   param.vvel.coalign_min_quality = 0.5;
 end

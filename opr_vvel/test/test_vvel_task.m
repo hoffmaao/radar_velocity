@@ -107,6 +107,39 @@ gamma(~isfinite(gamma)) = 0;
 
 s_main = bsxfun(@times, amp, (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2));
 
+% A bright, band-limited SURFACE RETURN.
+%
+% Without one this synthetic is depth-decaying white noise with no feature
+% at the surface at all: every fast-time bin is independent, so the
+% trace-averaged power profile converges to the smooth 1200 m decay
+% envelope and carries no structure at bin scale. Real accum data is the
+% opposite - the surface is the brightest target in the record and its
+% pulse response spans several bins (the EAGER products show a range
+% sidelobe at +/-5.4 bins at 0.37-0.55 of the main peak).
+%
+% That gap matters beyond realism for its own sake. vdef.coalignPair
+% locates the pair offset from exactly this bin-scale structure, so a
+% synthetic without a surface return cannot exercise the estimator that
+% runs on the real data - it would report ~0 for any sub-bin shift and the
+% test would be measuring nothing. The whole method also references depth
+% to the surface return, so a synthetic that never puts one in the data is
+% a poor model of the input regardless.
+%
+% Built as a band-limited impulse: a rectangular band over 60% of the
+% sampled bandwidth (real radar data is oversampled relative to its chirp
+% bandwidth, which is why the response spreads) with the linear phase for
+% a delay to Surface. The result is a sinc-like pulse with sidelobes,
+% coherent across passes because it is added to s_main before the per-pass
+% mixing, and given an independent phase per trace like any other target.
+kshift = (-floor(Nt/2):floor((Nt-1)/2)).';
+band   = ifftshift(double(abs(kshift) <= 0.6*Nt/2));
+f_bb_s = (fs/Nt) * ifftshift(kshift);
+pulse  = ifft(band .* exp(-1i*2*pi*f_bb_s*Surface));
+pulse  = pulse / max(abs(pulse));
+SURF_AMP = 8;          % surface well above the volume scatter, as in the real data
+s_main = s_main + SURF_AMP * bsxfun(@times, pulse, exp(1i*2*pi*rand(1,Nx)));
+clear kshift band f_bb_s pulse;
+
 % Per-pass BULK time shifts, simulating the residual of multipass's z-motion
 % compensation on a floating shelf (the tide-proportional artefact). These
 % are a whole-slice delay, envelope and carrier, exactly the form
@@ -360,13 +393,20 @@ assert(abs(out34.dtau_bulk - expect_bulk34) < 0.25e-9, ...
   'pair 3->4: coalign measured %.3f ns against an injected %.3f ns', ...
   out34.dtau_bulk*1e9, expect_bulk34*1e9);
 
-%% Coalignment rejects a decorrelated pair rather than applying noise
+%% Coalignment rejects a window with no surface return rather than applying noise
 % =====================================================================
-% Two INDEPENDENT speckle fields share no signal, so the surface-window
-% cross-spectrum phase slope is noise: quality lands near 1/sqrt(Npairs)
-% (about 0.13 for the default window), far below the coalign_min_quality
-% floor, and the estimate must be rejected with the secondary returned
-% bit-identical instead of shifted by a spurious bulk delay.
+% Two INDEPENDENT noise fields carry no surface return at all, so their
+% trace-averaged power profiles are flat apart from independent
+% fluctuations and nothing real correlates: quality lands far below the
+% coalign_min_quality floor and the estimate must be rejected, with the
+% secondary returned bit-identical instead of shifted by a spurious delay.
+%
+% Note what this does NOT test. The estimator correlates trace-averaged
+% POWER, which is insensitive to interferometric coherence, so a merely
+% decorrelated pair over a real surface is measured correctly rather than
+% rejected - that is the intended behaviour, since the envelope position
+% is well defined however the phase behaves. The failure mode the floor
+% guards is an empty window, which is what this builds.
 rand('seed', 13); randn('seed', 13);   %#ok<RAND>
 noise_a = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);
 noise_b = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);

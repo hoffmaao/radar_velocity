@@ -53,22 +53,60 @@ explicitly is, line 667-669). On grounded ice `ref_z` is platform motion
 and the compensation is right. On the floating shelf the platform and the
 surface ride the tide together, so `ref_z` is essentially the tide and
 the compensation displaces the returns by an amount that never was a
-range change. Measured by cross-spectrum group delay at the surface, the
-residual misalignment between pair slices reaches 7 ns (about two range
-bins) and runs at 1.2-1.3 times `-(ref_z_sec - ref_z_ref)/(c/2)` -
-slightly more than the full erroneous compensation survives to the
-product. (An earlier envelope-correlation diagnostic reported far smaller
-residuals; parabolic peak interpolation on a one-bin speckle correlation
-peak underestimates sub-bin shifts several-fold, which is why the
-estimator in the fix is a group delay, not a peak fit.)
+range change.
+
+**Whether it reaches a given product depends on that product's
+calibration (2026-08-05).** `multipass`'s own
+`param.multipass.coregistration_time_shift` applies a per-pass fast-time
+shift derived from the comp_mode 2 coregistration stage, and it removes
+this misalignment as a side effect. Across the five EAGER products the
+field splits them cleanly in two:
+
+| product | `coregistration_time_shift` | surface offset measured in `data` |
+|---|---|---|
+| `EAGER_2022` | all zeros | full residual, 0.97-1.07 x `-(ref_z_sec - ref_z_ref)/(c/2)` |
+| `EAGER_2022_GL4` | all zeros | full residual |
+| `EAGER_2022_GL1` | nonzero, up to 2 bins | aligned, within +/-0.9 ns of zero |
+| `EAGER_2022_GL2` | nonzero | aligned |
+| `EAGER_2022_GL3` | nonzero | aligned |
+
+So this correction is a **repair for uncoregistered products**, and on a
+properly coregistered one it must measure ~0 and do nothing. That split
+is not geography: it is exactly the split seen in the tidal response,
+where GL1/GL2/GL3 show a hinge and `EAGER_2022`/GL4 do not.
 
 **The fix** is `vdef.coalignPair`, applied per pair in `vvel_task` before
 the interferogram: measure the bulk shift empirically from the data and
 remove it, envelope and carrier. Empirical rather than the deterministic
-inverse because the surviving fraction is not exactly one. Validated on
-synthetics (injected bulk delays of 0.7-2.2 ns recovered to 11 ps or
-better; strain recovery unchanged) and recorded in every product as
-`dtau_bulk` / `dtau_bulk_pred` / `coalign_quality` / `coalign_applied`.
+inverse because how much survives depends on
+`coregistration_time_shift`, which `ref_z` alone does not reveal.
+Recorded in every product as `dtau_bulk` / `dtau_bulk_pred` /
+`coalign_quality` / `coalign_peak_ratio` / `coalign_applied`.
+
+**The estimator, replaced 2026-08-05.** It is now the normalised
+cross-correlation of the two slices' trace-averaged POWER profiles in a
+surface window, FFT-upsampled 32x. The previous cross-spectrum group
+delay was validated only on a synthetic that contained no surface return
+at all - depth-decaying white noise, whose trace-averaged profile has no
+bin-scale structure - and on the real products it ran 1.2-1.3x the true
+residual on the uncoregistered products and returned up to 8.5 ns of pure
+noise on the coregistered ones, where the truth is ~0, all at quality
+0.965-1.000. Since coalignment is applied to every pair, that noise was
+corrupting the *correctly* calibrated products. The envelope correlation
+reproduces the truth at ratio 0.97-1.07 on the former and stays within
++/-0.9 ns of zero on the latter. The synthetic now carries a realistic
+band-limited surface return, without which it cannot exercise the
+estimator that runs on real data.
+
+The `coalign_max_lag` bound is load-bearing rather than a formality: the
+trace-averaged surface profile carries a range sidelobe at +/-5.4 bins at
+0.37-0.55 of the main peak, and on one pair (GL1 / 20221211_07) that
+sidelobe outranked the true peak and gave -19 ns against a true 0.8 ns. A
+peak-dominance test does not separate these cases - that pair's
+peak-to-sidelobe ratio was 1.8 while a correctly measured pair sat at
+1.03 - so the bound is physical (3 bins, above the tidal range over c/2
+and well inside the sidelobe), and a peak found on the bound is rejected
+rather than clamped.
 
 **What the leg-1 comparison says now**
 (`scripts/figures/leg1_merge_check.m`): the two builds' tidal-response
