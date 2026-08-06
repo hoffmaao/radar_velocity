@@ -1,32 +1,32 @@
-%STRAIN_RATES Vertical strain rates from the repeat-pass products.
+%STRAIN_RATES How much does the ice column actually change thickness?
 %
-%   What this shows, and why it is built this way. Each pair measures the
-%   vertical displacement profile dh(z) between two epochs, so
-%   strain(z) = dh(z)/z is the mean vertical strain of the column between
-%   the surface and depth z. Fitting all the pairs of a line jointly,
+%   EVERYTHING HERE IS IN MILLIMETRES OF COLUMN THICKNESS CHANGE, because
+%   that is the thing being measured and the thing a reader can picture.
+%   Earlier versions reported "tide admittance" in microstrain per metre
+%   and "secular strain rate" in 1/yr, which are correct, jargon, and
+%   impossible to sanity-check by eye.
 %
-%       strain(z,t) = a + b*t + c*tide
+%   The conversion is just multiplication by the column depth:
+%     dh(z) = strain(z) * z
+%   so over the top 100 m, 1 mm of thickness change IS 10 microstrain.
+%   Negative means the column SHORTENED - the ice squashed.
 %
-%   (vdef.fitTideAdmittance) separates the two things worth reporting:
-%     b  the SECULAR vertical strain rate, b*365.25 in 1/yr - firn
-%        compaction plus any dynamic thinning
-%     c  the TIDE ADMITTANCE, strain per metre of tidal heave
-%   Both are invariant to which pass is the reference; a plain correlation
-%   of strain against tide is not.
+%   WHAT IS PLOTTED
+%     (a) tidal squeeze against depth: mm the column changes thickness for
+%         each metre the shelf rises on the tide
+%     (b) the same at one depth, along the line
+%     (c) the secular change: mm the column changed over the observation
+%         window itself, with no extrapolation to a year - a 3-day baseline
+%         reported as a yearly rate multiplies both signal and error by
+%         ~110 and stops being interpretable
 %
-%   THE FLOOR IS DRAWN BECAUSE IT IS THE POINT. EAGER_2022 and
-%   EAGER_2022_GL1 are the SAME leg over the SAME ice, so their
-%   disagreement measures systematic error directly, with no appeal to a
-%   noise model: 83 microstrain per metre of tide rms per block
-%   (scripts/figures/leg1_merge_check.m). Any admittance inside that band
-%   is not a measurement. It is drawn as a shaded band rather than left to
-%   the reader, because the previous version of this analysis reported a
-%   flexure hinge that sat entirely inside it.
-%
-%   Panels:
-%     (a) secular strain rate against DEPTH - the strain-rate profile
-%     (b) secular strain rate of the 0-100 m column ALONG TRACK
-%     (c) tide admittance of the 0-100 m column along track, over the floor
+%   THREE THINGS ARE DRAWN ON EVERY PANEL
+%     the measurements, one series per product;
+%     the FLOOR (shaded) - what the method's own systematic error is,
+%       measured from two builds of the SAME leg over the SAME ice, so it
+%       needs no noise model to justify;
+%     the EXPECTED signal (dashed) - what the physics predicts, so the
+%       reader can see the gap without doing arithmetic.
 %
 %   Run on the server, where the products live:
 %     /opt/sw/matlab/2024b/bin/matlab -batch "VVEL_SUFFIX='_v3'; run('.../strain_rates.m')"
@@ -40,28 +40,50 @@ out_dir  = '/kucresis/scratch/hoffmana_sta/vvel/figures';
 
 PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
-% Depths start at 50 m, not at the surface. strain(z) = dh(z)/z divides by
-% the depth, so the shallowest bins amplify their own noise without adding
-% information - at 25 m the block-to-block scatter is several times the
-% whole signal and it dominates any axis it shares.
-DEPTHS       = 50:25:250;   % [m] depths at which the joint fit is run
-ALONG_DEPTH  = 100;         % [m] column depth driving panels (b) and (c)
-MAX_BASELINE = 10;          % [m] cross-track baseline cut
+% strain(z) = dh(z)/z divides by depth, so the shallowest bins amplify
+% their own noise; start at 50 m.
+DEPTHS       = 50:25:250;
+ALONG_DEPTH  = 100;
+MAX_BASELINE = 10;
 MIN_PAIRS    = 6;
+FLOOR_A = 'EAGER_2022';      % two builds of the SAME leg: their
+FLOOR_B = 'EAGER_2022_GL1';  % disagreement IS the systematic error
 
-% The systematic floor for BOTH quantities is measured, not assumed, and is
-% computed below from the two builds of leg 1: EAGER_2022 and
-% EAGER_2022_GL1 are the same traverse over the same ice, so their
-% per-block disagreement is systematic error with no noise model involved.
-FLOOR_A = 'EAGER_2022';
-FLOOR_B = 'EAGER_2022_GL1';
+% Expected TIDAL signal, from thin-plate flexure. A plate of thickness H
+% bent to curvature kappa = 1/L^2 per metre of tide has surface bending
+% strain eps_xx = (H/2)*kappa, falling linearly to zero at the neutral
+% plane H/2 and reversing below it. The vertical strain follows by
+% Poisson, eps_zz = -nu/(1-nu)*eps_xx. Averaged over the top z:
+%   eps_zz_avg(z) = -nu/(1-nu) * (H/2)*kappa * (1 - z/H)
+%   dh(z)         = eps_zz_avg(z) * z
+% SENSITIVE TO L: the curvature goes as 1/L^2, so halving the flexure
+% wavelength quadruples the expected signal. 2 km is a mid-range guess for
+% this setting, not a fitted value - read the dashed curve as an order of
+% magnitude, not a prediction.
+H_ICE  = 300;    % [m] ice thickness
+L_FLEX = 2000;   % [m] flexure length scale
+NU     = 0.33;   % Poisson ratio
+
+% Expected SECULAR signal: steady-state firn compaction. An accumulation
+% rate b_dot of ice-equivalent thickness requires the firn column to
+% compact at b_dot*(rho_ice/rho_surf - 1) to stay in steady state.
+%
+% That compaction happens in the FIRN, between the surface and bubble
+% close-off - NOT spread through the full ice thickness. So a column
+% reaching past close-off already contains essentially all of it, and
+% deepening the column further adds no more signal. vdef.defaultParams
+% puts close-off at 60 m here, so every depth plotted from 75 m down
+% captures the whole of it.
+ACC_ICE_EQ = 0.20;   % [m ice/yr] Windless Bight, order of magnitude
+RHO_SURF   = 350; RHO_ICE = 917;
+BCO_DEPTH  = vdef.defaultParams().bco_depth;   % [m] bubble close-off
 
 if ~exist(out_dir,'dir'), mkdir(out_dir); end
 
 % Categorical palette, fixed order, never cycled. Validated: worst adjacent
 % CVD dE 9.1 (protan), normal-vision floor 19.6. Three slots sit under 3:1
 % against white, so identity is carried by a legend AND a distinct marker
-% per line, never by colour alone, and the numbers are printed as a table.
+% per series, never by colour alone, and the numbers are printed as a table.
 PAL.cat = [0.165 0.471 0.839;    % #2a78d6 blue
            0.922 0.408 0.204;    % #eb6834 orange
            0.106 0.686 0.478;    % #1baf7a aqua
@@ -71,6 +93,7 @@ PAL.cat_mk  = {'o','s','^','d','v'};
 PAL.ink      = [0.20 0.20 0.20];
 PAL.ink_soft = [0.45 0.45 0.45];
 PAL.band     = [0.90 0.90 0.88];
+PAL.expect   = [0.35 0.35 0.35];
 
 %% Measure
 res = [];
@@ -83,140 +106,115 @@ assert(~isempty(res), 'no products could be analysed');
 
 jz = find(DEPTHS == ALONG_DEPTH, 1);
 assert(~isempty(jz), 'ALONG_DEPTH %g is not one of DEPTHS', ALONG_DEPTH);
+span_days = median([res.span]);
 
-%% The systematic floor, from two builds of the same leg
-[RATE_FLOOR_Z, ADM_FLOOR_Z, nfl] = same_leg_floor(res, FLOOR_A, FLOOR_B, numel(DEPTHS));
-RATE_FLOOR = RATE_FLOOR_Z(jz);
-ADM_FLOOR  = ADM_FLOOR_Z(jz);
-if isfinite(ADM_FLOOR)
-  fprintf('\nSystematic floor from %s vs %s over %d common blocks:\n', ...
-    FLOOR_A, FLOOR_B, nfl);
-  fprintf('%8s %16s %16s\n','depth[m]','rate rms[1/yr]','adm rms[ue/m]');
-  for z = 1:numel(DEPTHS)
-    fprintf('%8.0f %16.2e %16.0f\n', DEPTHS(z), RATE_FLOOR_Z(z), 1e6*ADM_FLOOR_Z(z));
-  end
-else
-  warning('could not measure the same-leg floor; the bands will not be drawn');
-end
+%% Expected curves, in mm of column thickness change
+kappa   = 1/L_FLEX^2;
+epsx_s  = (H_ICE/2)*kappa;
+exp_tide_mm = 1e3 * (-NU/(1-NU)) * epsx_s * (1 - DEPTHS/H_ICE) .* DEPTHS;
+% Firn compaction is distributed through the firn column; over the top z it
+% scales with how much of that column is included, taken as linear in z.
+compact_rate = ACC_ICE_EQ * (RHO_ICE/RHO_SURF - 1);            % [m/yr] firn column
+exp_sec_mm   = -1e3 * compact_rate * (span_days/365.25) ...
+  * min(DEPTHS/BCO_DEPTH, 1);   % saturates once the column passes close-off
 
-%% Report - the table that relieves the sub-3:1 contrast on three hues
-fprintf('\n===== secular vertical strain rate, 0-%.0f m column =====\n', ALONG_DEPTH);
-fprintf('%-16s %8s %14s %12s %10s\n','product','blocks','mean[1/yr]','se[1/yr]','|t|');
+%% Floor, from two builds of the same leg
+[FL_SEC_MM, FL_TIDE_MM, nfl] = same_leg_floor(res, FLOOR_A, FLOOR_B, numel(DEPTHS));
+
+%% Report
+fprintf('\nObservation window: %.1f days\n', span_days);
+fprintf('\n===== TIDAL: column thickness change per metre of tide [mm] =====\n');
+fprintf('%-16s %10s | expected %.2f mm, floor %.2f mm (at %.0f m)\n', ...
+  'product','mean', exp_tide_mm(jz), FL_TIDE_MM(jz), ALONG_DEPTH);
 for i = 1:numel(res)
-  v = res(i).rate(:,jz); s = res(i).rate_std(:,jz);
-  ok = isfinite(v) & isfinite(s) & s > 0;
-  if ~any(ok), continue; end
-  mu = mean(v(ok)); se = std(v(ok))/sqrt(nnz(ok));
-  fprintf('%-16s %8d %14.3e %12.3e %10.2f\n', res(i).name, nnz(ok), mu, se, abs(mu/se));
+  v = res(i).tide_mm(:,jz); v = v(isfinite(v));
+  if isempty(v), continue; end
+  fprintf('%-16s %10.2f\n', res(i).name, mean(v));
 end
-
-fprintf('\n===== tide admittance, 0-%.0f m column (floor %.0f ue/m) =====\n', ...
-  ALONG_DEPTH, 1e6*ADM_FLOOR);
-fprintf('%-16s %8s %14s %12s %10s\n','product','blocks','mean[ue/m]','se[ue/m]','vs floor');
+fprintf('\n===== SECULAR: column thickness change over %.1f days [mm] =====\n', span_days);
+fprintf('%-16s %10s | expected %.2f mm, floor %.2f mm (at %.0f m)\n', ...
+  'product','mean', exp_sec_mm(jz), FL_SEC_MM(jz), ALONG_DEPTH);
 for i = 1:numel(res)
-  v = res(i).adm(:,jz);
-  ok = isfinite(v);
-  if ~any(ok), continue; end
-  mu = mean(v(ok)); se = std(v(ok))/sqrt(nnz(ok));
-  fprintf('%-16s %8d %14.1f %12.1f %10s\n', res(i).name, nnz(ok), 1e6*mu, 1e6*se, ...
-    ternary(abs(mu) > ADM_FLOOR, 'ABOVE', 'inside'));
+  v = res(i).sec_mm(:,jz); v = v(isfinite(v));
+  if isempty(v), continue; end
+  fprintf('%-16s %10.2f\n', res(i).name, mean(v));
 end
+fprintf('\nFloor / expected ratio at %.0f m: tidal %.1fx, secular %.1fx\n', ...
+  ALONG_DEPTH, FL_TIDE_MM(jz)/abs(exp_tide_mm(jz)), ...
+  FL_SEC_MM(jz)/abs(exp_sec_mm(jz)));
 
 %% Figure
-h = figure('Visible','off','Position',[100 100 1000 1160],'Color','w');
-set(0,'CurrentFigure',h);   % Octave: imagesc/plot ignore 'parent' otherwise
+h = figure('Visible','off','Position',[100 100 1020 1180],'Color','w');
+set(0,'CurrentFigure',h);
 axstyle = {'GridAlpha',0.15,'XColor',PAL.ink_soft,'YColor',PAL.ink_soft,'Box','off'};
 
-% (a) strain-rate profile against depth
-ax1 = axes('parent',h,'Position',[0.10 0.715 0.62 0.235]);
+% (a) tidal squeeze against depth
+ax1 = axes('parent',h,'Position',[0.10 0.720 0.60 0.225]);
 set(0,'CurrentFigure',h); hold(ax1,'on');
-% The same-leg floor, depth by depth. Without it five disagreeing profiles
-% read as structure; with it they read as what they are.
-if any(isfinite(RATE_FLOOR_Z))
-  zf = DEPTHS(isfinite(RATE_FLOOR_Z)); ff = RATE_FLOOR_Z(isfinite(RATE_FLOOR_Z));
-  fill(ax1, [ff fliplr(-ff)], [zf fliplr(zf)], PAL.band, 'EdgeColor','none');
-end
+band_x(ax1, FL_TIDE_MM, DEPTHS, PAL.band);
 plot(ax1, [0 0], [0 max(DEPTHS)], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
-hleg = []; lbl = {}; prof_all = [];
+hexp = plot(ax1, exp_tide_mm, DEPTHS, '--', 'Color', PAL.expect, 'LineWidth', 2);
+hleg = []; lbl = {}; allv = [];
 for i = 1:numel(res)
-  col = PAL.cat(i,:); mk = PAL.cat_mk{i};
-  prof = nan(1,numel(DEPTHS));
-  for z = 1:numel(DEPTHS)
-    v = res(i).rate(:,z); prof(z) = mean(v(isfinite(v)));
-  end
-  prof_all = [prof_all prof]; %#ok<AGROW>
-  hleg(end+1) = plot(ax1, prof, DEPTHS, '-', 'Color', col, 'LineWidth', 2); %#ok<AGROW>
-  plot(ax1, prof, DEPTHS, mk, 'MarkerSize', 7, 'MarkerFaceColor', col, ...
-    'MarkerEdgeColor','w','LineWidth',1);
+  prof = nanmean_cols(res(i).tide_mm);
+  allv = [allv prof]; %#ok<AGROW>
+  hleg(end+1) = plot(ax1, prof, DEPTHS, '-', 'Color', PAL.cat(i,:), 'LineWidth', 2); %#ok<AGROW>
+  plot(ax1, prof, DEPTHS, PAL.cat_mk{i}, 'MarkerSize', 7, ...
+    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
   lbl{end+1} = res(i).name; %#ok<AGROW>
 end
 grid(ax1,'on'); set(ax1, axstyle{:}); set(ax1,'YDir','reverse');
-ylim(ax1,[0 max(DEPTHS)]);
-% Explicit limits with padding: autoscale was clipping the shallowest
-% points against the axis edge, which hides how far they actually swing
-pa = prof_all(isfinite(prof_all));
-if ~isempty(pa)
-  lim = max(abs([pa(:); RATE_FLOOR_Z(isfinite(RATE_FLOOR_Z))'])) * 1.12;
-  xlim(ax1, [-lim lim]);
-end
-xlabel(ax1,'Secular vertical strain rate (1/yr)','Color',PAL.ink);
+ylim(ax1,[0 max(DEPTHS)]); set_sym_xlim(ax1, [allv FL_TIDE_MM]);
+xlabel(ax1,'Column thickness change per metre of tide (mm)','Color',PAL.ink);
 ylabel(ax1,'Depth below surface (m)','Color',PAL.ink);
-title(ax1,'Strain-rate profile: mean over blocks, over the same-leg floor (shaded)', ...
+title(ax1,'Tidal squeeze: how much the column thins when the shelf rises 1 m', ...
   'Color',PAL.ink);
-lg = legend(ax1, hleg, lbl, 'Location','eastoutside','Interpreter','none');
+lg = legend(ax1, [hleg hexp], [lbl {'expected from flexure'}], ...
+  'Location','eastoutside','Interpreter','none');
 set(lg,'TextColor',PAL.ink,'Box','off');
 
-% (b) secular rate along track
-ax2 = axes('parent',h,'Position',[0.10 0.395 0.80 0.235]);
+% (b) tidal squeeze along track
+ax2 = axes('parent',h,'Position',[0.10 0.400 0.60 0.225]);
 set(0,'CurrentFigure',h); hold(ax2,'on');
 xmax = 0;
 for i = 1:numel(res), xmax = max(xmax, max(res(i).along)/1e3); end
-if isfinite(RATE_FLOOR)
-  fill(ax2, [0 xmax xmax 0], [-RATE_FLOOR -RATE_FLOOR RATE_FLOOR RATE_FLOOR], ...
-    PAL.band, 'EdgeColor','none');
-end
+fill(ax2, [0 xmax xmax 0], [-1 -1 1 1]*FL_TIDE_MM(jz), PAL.band, 'EdgeColor','none');
 plot(ax2, [0 xmax], [0 0], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
+plot(ax2, [0 xmax], [1 1]*exp_tide_mm(jz), '--', 'Color', PAL.expect, 'LineWidth', 2);
 for i = 1:numel(res)
-  col = PAL.cat(i,:); mk = PAL.cat_mk{i};
-  v = res(i).rate(:,jz); s = res(i).rate_std(:,jz); x = res(i).along/1e3;
+  v = res(i).tide_mm(:,jz); s = res(i).tide_mm_std(:,jz); x = res(i).along/1e3;
   ok = isfinite(v);
-  draw_errbars(ax2, x(ok), v(ok), s(ok), col);
-  plot(ax2, x(ok), v(ok), mk, 'MarkerSize', 7, 'MarkerFaceColor', col, ...
-    'MarkerEdgeColor','w','LineWidth',1);
+  draw_errbars(ax2, x(ok), v(ok), s(ok), PAL.cat(i,:));
+  plot(ax2, x(ok), v(ok), PAL.cat_mk{i}, 'MarkerSize', 7, ...
+    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
 end
 grid(ax2,'on'); set(ax2, axstyle{:}); xlim(ax2,[0 xmax]);
 xlabel(ax2,'Along track (km)','Color',PAL.ink);
-ylabel(ax2, sprintf('Secular strain rate 0-%.0f m (1/yr)', ALONG_DEPTH),'Color',PAL.ink);
-title(ax2, sprintf('Secular vertical strain rate, over the %.1e /yr same-leg floor (shaded); bars are 1 sigma', ...
-  RATE_FLOOR), 'Color', PAL.ink);
+ylabel(ax2, sprintf('Change per metre of tide, top %.0f m (mm)', ALONG_DEPTH),'Color',PAL.ink);
+title(ax2, sprintf('Along the line: floor is %.1f mm (shaded), expected signal %.1f mm (dashed)', ...
+  FL_TIDE_MM(jz), abs(exp_tide_mm(jz))), 'Color', PAL.ink);
+label_band(ax2, xmax, FL_TIDE_MM(jz), PAL.ink_soft);
 
-% (c) tide admittance along track, against the measured systematic floor
-ax3 = axes('parent',h,'Position',[0.10 0.075 0.80 0.235]);
+% (c) secular change over the observation window
+ax3 = axes('parent',h,'Position',[0.10 0.080 0.60 0.225]);
 set(0,'CurrentFigure',h); hold(ax3,'on');
-if isfinite(ADM_FLOOR)
-  fill(ax3, [0 xmax xmax 0], 1e6*[-ADM_FLOOR -ADM_FLOOR ADM_FLOOR ADM_FLOOR], ...
-    PAL.band, 'EdgeColor','none');
-end
+fill(ax3, [0 xmax xmax 0], [-1 -1 1 1]*FL_SEC_MM(jz), PAL.band, 'EdgeColor','none');
 plot(ax3, [0 xmax], [0 0], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
+plot(ax3, [0 xmax], [1 1]*exp_sec_mm(jz), '--', 'Color', PAL.expect, 'LineWidth', 2);
 for i = 1:numel(res)
-  col = PAL.cat(i,:); mk = PAL.cat_mk{i};
-  v = 1e6*res(i).adm(:,jz); s = 1e6*res(i).adm_std(:,jz); x = res(i).along/1e3;
+  v = res(i).sec_mm(:,jz); s = res(i).sec_mm_std(:,jz); x = res(i).along/1e3;
   ok = isfinite(v);
-  draw_errbars(ax3, x(ok), v(ok), s(ok), col);
-  plot(ax3, x(ok), v(ok), mk, 'MarkerSize', 7, 'MarkerFaceColor', col, ...
-    'MarkerEdgeColor','w','LineWidth',1);
+  draw_errbars(ax3, x(ok), v(ok), s(ok), PAL.cat(i,:));
+  plot(ax3, x(ok), v(ok), PAL.cat_mk{i}, 'MarkerSize', 7, ...
+    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
 end
 grid(ax3,'on'); set(ax3, axstyle{:}); xlim(ax3,[0 xmax]);
 xlabel(ax3,'Along track (km)','Color',PAL.ink);
-ylabel(ax3, sprintf('Tide admittance 0-%.0f m (\\mu\\epsilon/m)', ALONG_DEPTH), ...
+ylabel(ax3, sprintf('Change over %.1f days, top %.0f m (mm)', span_days, ALONG_DEPTH), ...
   'Color',PAL.ink);
-title(ax3, sprintf('Tidal response, over the %.0f \\mu\\epsilon/m same-leg floor (shaded)', ...
-  1e6*ADM_FLOOR), 'Color', PAL.ink);
-% Label the band at its own edge, clear of the markers, rather than on the
-% zero line where it reads as a label for zero and collides with the data
-text(ax3, 0.985*xmax, 1e6*ADM_FLOOR, 'same-leg disagreement ', ...
-  'Color', PAL.ink_soft, 'FontSize', 9, ...
-  'HorizontalAlignment','right', 'VerticalAlignment','bottom');
+title(ax3, sprintf('Steady thinning: floor is %.0f mm (shaded), expected firn compaction %.1f mm (dashed)', ...
+  FL_SEC_MM(jz), abs(exp_sec_mm(jz))), 'Color', PAL.ink);
+label_band(ax3, xmax, FL_SEC_MM(jz), PAL.ink_soft);
 
 out_fn = fullfile(out_dir, sprintf('EAGER_2022_strain_rates%s.png', VVEL_SUFFIX));
 print(h, out_fn, '-dpng', '-r120');
@@ -224,32 +222,64 @@ close(h);
 fprintf('\nWrote %s\n', out_fn);
 
 %% ========================================================================
-function [rate_floor, adm_floor, n] = same_leg_floor(res, nameA, nameB, nz)
-% Per-block rms disagreement between two builds of the SAME leg, at EVERY
-% depth. Blocks are matched by along-track position rather than by index,
-% because the two products need not start at the same place or hold the
-% same block count.
-rate_floor = nan(1,nz); adm_floor = nan(1,nz); n = 0;
+function band_x(ax, fl, z, col)
+ok = isfinite(fl);
+if ~any(ok), return; end
+fill(ax, [fl(ok) fliplr(-fl(ok))], [z(ok) fliplr(z(ok))], col, 'EdgeColor','none');
+end
+
+function label_band(ax, xmax, fl, col)
+if ~isfinite(fl), return; end
+text(ax, 0.99*xmax, fl, 'method floor ', 'Color', col, 'FontSize', 9, ...
+  'HorizontalAlignment','right','VerticalAlignment','bottom');
+end
+
+% NOTE on labelling the expected line: an inline annotation was tried and
+% removed. At this scale the expected signal sits almost on the zero line -
+% which is the finding - so any label long enough to be useful runs across
+% several kilometres of the axis and collides with the markers. The panel
+% titles carry the number instead, and the legend carries the dash style.
+
+function set_sym_xlim(ax, v)
+v = v(isfinite(v));
+if isempty(v), return; end
+lim = max(abs(v))*1.12;
+xlim(ax, [-lim lim]);
+end
+
+function m = nanmean_cols(A)
+m = nan(1, size(A,2));
+for k = 1:size(A,2)
+  v = A(:,k); v = v(isfinite(v));
+  if ~isempty(v), m(k) = mean(v); end
+end
+end
+
+%% ========================================================================
+function [fl_sec, fl_tide, n] = same_leg_floor(res, nameA, nameB, nz)
+% Per-block rms disagreement between two builds of the SAME leg, at every
+% depth, in mm. Blocks are matched by along-track position, not by index:
+% the two products need not start in the same place or hold the same count.
+fl_sec = nan(1,nz); fl_tide = nan(1,nz); n = 0;
 ia = find(strcmp({res.name}, nameA), 1);
 ib = find(strcmp({res.name}, nameB), 1);
 if isempty(ia) || isempty(ib), return; end
 A = res(ia); B = res(ib);
-TOL = 100;   % [m] two blocks closer than this are the same piece of ice
+TOL = 100;   % [m] blocks closer than this are the same piece of ice
 pairs = [];
 for k = 1:numel(A.along)
   [gap, m] = min(abs(B.along - A.along(k)));
-  if gap > TOL, continue; end
-  pairs(end+1,:) = [k m]; %#ok<AGROW>
+  if gap <= TOL, pairs(end+1,:) = [k m]; end %#ok<AGROW>
 end
 if isempty(pairs), return; end
 for z = 1:nz
-  da = A.adm(pairs(:,1),z)  - B.adm(pairs(:,2),z);
-  dr = A.rate(pairs(:,1),z) - B.rate(pairs(:,2),z);
-  da = da(isfinite(da)); dr = dr(isfinite(dr));
-  if ~isempty(da), adm_floor(z)  = sqrt(mean(da.^2)); end
-  if ~isempty(dr), rate_floor(z) = sqrt(mean(dr.^2)); end
+  dt = A.tide_mm(pairs(:,1),z) - B.tide_mm(pairs(:,2),z);
+  ds = A.sec_mm(pairs(:,1),z)  - B.sec_mm(pairs(:,2),z);
+  dt = dt(isfinite(dt)); ds = ds(isfinite(ds));
+  if ~isempty(dt), fl_tide(z) = sqrt(mean(dt.^2)); end
+  if ~isempty(ds), fl_sec(z)  = sqrt(mean(ds.^2)); end
 end
-d = A.adm(pairs(:,1),1) - B.adm(pairs(:,2),1);
+d = A.tide_mm(pairs(:,1),1) - B.tide_mm(pairs(:,2),1);
 n = nnz(isfinite(d));
 end
 
@@ -279,8 +309,7 @@ for i = 1:np
       pass_name, f(i).name, o.pass_idx_ref, ref0);
   end
   if isempty(strain)
-    Nblk = numel(o.S1);
-    strain = nan(Nblk, np, nz);
+    strain = nan(numel(o.S1), np, nz);
     along = o.Along_track(:); lat = o.Latitude(:); lon = o.Longitude(:);
   end
   for b = 1:size(strain,1)
@@ -303,34 +332,32 @@ if nnz(use) < MIN_PAIRS
   return;
 end
 strain = strain(:,use,:); tide = tide(use); tday = tday(use) - min(tday(use));
+span = max(tday) - min(tday);
 
 Nblk = size(strain,1);
 R = struct('name', pass_name, 'along', along, 'lat', lat, 'lon', lon, ...
-  'npair', nnz(use), ...
-  'rate', nan(Nblk,nz), 'rate_std', nan(Nblk,nz), ...
-  'adm',  nan(Nblk,nz), 'adm_std',  nan(Nblk,nz));
+  'npair', nnz(use), 'span', span, ...
+  'tide_mm', nan(Nblk,nz), 'tide_mm_std', nan(Nblk,nz), ...
+  'sec_mm',  nan(Nblk,nz), 'sec_mm_std',  nan(Nblk,nz));
 for z = 1:nz
   A = vdef.fitTideAdmittance(strain(:,:,z), tday, tide);
-  R.rate(:,z)     = A.trend(:)     * 365.25;    % strain/day -> 1/yr
-  R.rate_std(:,z) = A.trend_std(:) * 365.25;
-  R.adm(:,z)      = A.admittance(:);
-  R.adm_std(:,z)  = A.admittance_std(:);
+  % strain -> millimetres of column thickness change: multiply by the depth
+  R.tide_mm(:,z)     = 1e3 * A.admittance(:)     * DEPTHS(z);
+  R.tide_mm_std(:,z) = 1e3 * A.admittance_std(:) * DEPTHS(z);
+  % trend is per DAY; report the change over the window actually observed
+  R.sec_mm(:,z)      = 1e3 * A.trend(:)     * span * DEPTHS(z);
+  R.sec_mm_std(:,z)  = 1e3 * A.trend_std(:) * span * DEPTHS(z);
 end
 end
 
 %% ========================================================================
 function draw_errbars(ax, x, y, s, col)
-% Drawn as explicit segments rather than errorbar(): the gnuplot backend
-% Octave falls back to on a headless box renders errorbar caps
-% inconsistently, and this keeps the styling identical to the markers.
+% Explicit segments rather than errorbar(): the gnuplot backend Octave
+% falls back to on a headless box renders caps inconsistently, and this
+% keeps the styling identical to the markers.
 ok = isfinite(s);
 for k = 1:numel(x)
   if ~ok(k), continue; end
   plot(ax, [x(k) x(k)], [y(k)-s(k) y(k)+s(k)], '-', 'Color', col, 'LineWidth', 1);
 end
-end
-
-%% ========================================================================
-function v = ternary(c, a, b)
-if c, v = a; else, v = b; end
 end
