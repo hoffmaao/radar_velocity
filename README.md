@@ -160,6 +160,14 @@ The four products that had "agreed" on the hinge to ~570 m agreed because
 they share a survey geometry and therefore the same `a(x) = 1` crossing -
 not because they each saw the same ice.
 
+**The strain rates themselves** are in
+`scripts/figures/strain_rates.m`, which reports the secular term and the
+tide admittance of the joint fit over a systematic floor measured from
+the two builds of leg 1 rather than assumed from a noise model. Every
+product's line mean sits INSIDE that floor for both quantities, at every
+depth. The floor scales as 1/z, from 148 µε/m and 4.3e-2 /yr at 50 m to
+29 µε/m and 8.8e-3 /yr at 250 m.
+
 **What does survive**: real tidal flexure IS present, measured from the
 GPS alone with no radar (`scripts/diagnostics/gps_flexure.m`). Regressing
 each pass's along-track `ref_z` on its own line mean gives `a(x)` falling
