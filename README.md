@@ -127,11 +127,51 @@ bit-equal) and is the unit test. Both analysis scripts now read the
 admittance and its trend-removed partial correlation; plain r survives
 only in printed tables for continuity.
 
+### RETRACTED: the tidal flexure hinge was the artefact (2026-08-05)
+
+The project's headline result - vertical column strain correlating with
+the tide and reversing sign along track at a flexure hinge - **does not
+survive correct coalignment**. It was the residual misalignment.
+
+**Why a scalar correction manufactured it.** Both
+`coregistration_time_shift` and the first version of `vdef.coalignPair`
+remove a line MEAN. What survives is proportional to `(a(x) - 1)`, where
+`a(x)` is the local surface tidal admittance normalised so the line mean
+is 1. That residual changes sign exactly where `a(x) = 1` - a position
+set by the arbitrary normalisation of the survey, not by the ice.
+Measured: `a(x)` crosses 1 at 2.5-3.0 km in every product, and the
+apparent hinge sat within 0.5 km of that crossing every time. Real
+flexure predicts something different - bending strain follows the
+CURVATURE of the deflection, so it changes sign at an inflection of
+`a(x)`, and `a(x)` is concave-down at every point in the surveyed window.
+The data matched the artefact prediction and contradicted the flexure
+one.
+
+**What per-column coalignment did to it.** The correlation between the
+measured admittance and the artefact predictor
+(`scripts/diagnostics/artefact_vs_signal.m`) went from -0.84…-0.97 with
+every product at p < 0.005, to +0.34 / -0.63 / +0.29 / +0.55 / -0.64 with
+none significant. The change-point detector now finds NO hinge in any of
+the five products, where with the scalar correction all five showed one
+at contrast 0.96-1.60. The surviving admittance is -33 to +40 µε/m with
+no along-track structure.
+
+The four products that had "agreed" on the hinge to ~570 m agreed because
+they share a survey geometry and therefore the same `a(x) = 1` crossing -
+not because they each saw the same ice.
+
+**What does survive**: real tidal flexure IS present, measured from the
+GPS alone with no radar (`scripts/diagnostics/gps_flexure.m`). Regressing
+each pass's along-track `ref_z` on its own line mean gives `a(x)` falling
+monotonically by a factor ~4 along the line; GL3 and GL4 agree to 0.02
+despite different reference passes and pass sets, so it is physical
+rather than a GPS baseline ramp. Grounding is toward the north/northeast
+end. The radar simply does not resolve the column-strain signature of it
+in this dataset.
+
 **Interpretation caveats that remain**: the five products are four legs
 of ONE line (120-145 m apart, walked ~24 min apart), not independent
-lines; and the hinge position should be read from the joint-fit
-admittance (which the analysis scripts now report), not from the plain
-correlation.
+lines, so they were never five independent tests of anything.
 
 ## Target data
 

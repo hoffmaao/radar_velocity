@@ -144,6 +144,28 @@ if ~isfield(param.vvel,'coalign_upsample') || isempty(param.vvel.coalign_upsampl
   param.vvel.coalign_upsample = 32;
 end
 
+% coalign_win_cols: along-track window length [columns] for the coalignment
+% estimate. The misalignment VARIES along track - ref_z is a per-column
+% vector, and its 5th-to-95th spread within one EAGER pair reaches 7.4 ns,
+% larger than the mean - so a scalar cannot remove it. Worse, a scalar
+% leaves a residual proportional to (a(x) - 1), with a(x) the local surface
+% tidal admittance normalised to line-mean 1, which changes sign exactly
+% where a(x) = 1 and manufactured a false flexure hinge there in all five
+% EAGER products.
+%
+% 300 columns is 750 m at 2.5 m sampling, giving ~12 overlapping windows on
+% a 4.8 km line. The trade is noise against resolution: the estimate
+% averages over the columns in the window, so 300 gives roughly 2.5x the
+% scatter of a whole-line fit (about 0.25 ns) against an along-track signal
+% of ~7 ns, while still resolving structure the ~1 km flexure scale needs.
+%
+% Set to 0, [] or Inf for ONE window over the whole line, i.e. the old
+% scalar behaviour. That is for deliberately reproducing the artefact, not
+% for production.
+if ~isfield(param.vvel,'coalign_win_cols') || isempty(param.vvel.coalign_win_cols)
+  param.vvel.coalign_win_cols = 300;
+end
+
 % coalign_min_quality: floor on the normalised surface-profile correlation
 % (info.quality) below which the measured shift is rejected as noise and
 % the pair is left unaligned.
