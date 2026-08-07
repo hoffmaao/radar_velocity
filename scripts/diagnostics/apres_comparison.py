@@ -1,109 +1,164 @@
 #!/usr/bin/env python3
-"""Compare the repeat-pass InSAR tidal signal against ApRES at the same site.
+"""Compare the repeat-pass InSAR tidal response against ApRES at the same site.
 
-WHY THIS EXISTS. The InSAR measurement (this repo) reports the tidal
-response as a STRAIN per metre of tidal heave. The ApRES processing in
-~/projects/EAGER_ApRES reports a vertical STRAIN RATE in 1/yr, tidally
-modulated. Those are not the same quantity and cannot be compared until one
-is converted, which is what this does. It is the only independent check we
-have on whether the signal we are trying to detect is the size we think.
+WHAT THIS DOES, AND WHY IT IS NOT A CONVERSION. The ApRES processing in
+~/projects/EAGER_ApRES already fits every pair: `dh(z) = m0 + m1*(z - z_mid)`
+by weighted least squares, saved per pair in `results/<site>/pairs/*.npz`
+along with the underlying displacement profiles `fine_range_m`/`fine_dh_m`.
+An earlier version of this script took only the scalar `vsr_per_year` out of
+those fits and converted it with an assumed tidal amplitude. That threw away
+the depth information the fits are built on.
 
-THE CONVERSION. If the strain rate oscillates as A*cos(w*t), the strain
-itself oscillates as (A/w)*sin(w*t), so the strain amplitude is A/w. Divide
-by the tidal amplitude to get strain per metre of tide, the InSAR quantity.
+This version uses the profiles directly. The pairs chain end to end with no
+gaps (t2 of one is t1 of the next), so cumulatively summing `fine_dh_m` gives
+displacement against time at EVERY depth on the 24-224 m grid. Each depth is
+then fitted with
 
-    strain_amp = A / w                     [dimensionless]
-    admittance = strain_amp / tide_amp     [1/m]
+    dh(z,t) = a + b*t + c*tide(t)
 
-WHAT IT SHOWS. ApRES and the thin-plate flexure estimate drawn on
-scripts/figures/strain_rates.m agree to about 10%, and both sit roughly 7x
-below the InSAR systematic floor. So the expected-signal curve on that
-figure is not just a model - an independent instrument at the same site in
-the same weeks measures the same magnitude.
+which is exactly `vdef.fitTideAdmittance`, the estimator this project uses -
+same model, same reference-invariance, same meaning for c. So the two
+instruments are compared with one estimator rather than through a chain of
+assumptions, and the result is a PROFILE, not a single number.
 
-SOURCES. ApRES amplitudes are from a least-squares harmonic fit to the
-medfilt vertical strain-rate series in
-~/projects/EAGER_ApRES/results/<site>/pair_results.csv. That fit is NOT a
-product of the ApRES repo - there is no tidal analysis in it - so these
-numbers live here rather than being read from a file there.
+The tide is CATS2008 at the survey centroid. The ApRES site coordinates were
+never recorded (GPS was off for the whole deployment), but CATS2008 varies by
+0.002 m across the 5 km survey array, so any nearby point is equivalent.
 
-CAVEATS, all of which matter:
-  - DIFFERENT DEPTH INTERVALS. ApRES excludes the firn and fits from 100 m
-    to about 20 m above the bed; the InSAR quantity here is the 0-100 m
-    column. They do not overlap at all.
-  - THE NEUTRAL PLANE SITS INSIDE THE ApRES INTERVAL. Bending strain
-    reverses sign at about H/2, which for 206-272 m of ice is 103-136 m -
-    inside the 101-224 m fit. So the ApRES bulk slope partially cancels its
-    own bending signal and is a LOWER BOUND on the near-surface amplitude.
-  - Only GA04 is trustworthy: GA01's tracked bed drifts -81.6 m and GA05's
-    +158.7 m, i.e. the bed pick jumps between reflectors.
-  - A 5.7-8.9 day record cannot separate K1 from O1 (13.6 d beat) or M2
-    from S2 (14.8 d), so constituent splits are indicative; the
-    diurnal-band power is the robust part.
-  - No ApRES site coordinates exist (GPS was off for the whole deployment),
-    so "the same site" means the same few-km area, not a known offset.
+WHAT IT SHOWS. ApRES and the InSAR measure the same physical quantity, and
+where they overlap in depth the ApRES amplitude is far below the InSAR
+systematic floor - which is why the InSAR cannot see it.
+
+CAVEATS
+  - Only GA04 is trustworthy. GA01's tracked bed drifts -81.6 m over the
+    record and GA05's +158.7 m, i.e. the bed pick jumps between reflectors.
+  - The ApRES grid starts at 24 m, so it does NOT constrain the top 24 m,
+    where firn compaction is fastest.
+  - Cumulative summing propagates any per-pair bias into a drift; the linear
+    term b absorbs a constant drift but not a varying one.
+  - 5.8 days cannot separate K1 from O1 or M2 from S2. The joint fit against
+    the full predicted tide sidesteps constituent splitting, but a phase
+    error in CATS2008 would bias c.
 """
 
+import csv
+import glob
 import math
+import os
+from datetime import datetime, timezone
 
-DAYS_PER_YEAR = 365.25
+import numpy as np
 
-# ApRES diurnal strain-rate amplitudes [1/yr] and their fit intervals [m].
-# GA01 is carried for completeness and flagged, not used for conclusions.
-APRES = {
-    "GA04": dict(amp_per_yr=0.0129, fit_top=101, fit_bot=224, ice=250.6,
-                 var_explained=0.62, trust=True),
-    "GA01": dict(amp_per_yr=0.0105, fit_top=101, fit_bot=177, ice=206.0,
-                 var_explained=0.49, trust=False),
-}
-
-DIURNAL_HOURS = 23.93          # K1; O1 is 25.82 h, which changes this ~8%
-TIDE_AMP_M    = 0.55           # CATS2008 over the array: 1.093 m range
+APRES_ROOT = os.path.expanduser("~/projects/EAGER_ApRES")
+SITES = ["GA04"]                       # GA01/GA05 bed picks are unreliable
+TIDE_CSV = os.path.join(os.path.dirname(__file__), "cats2008_apres_window.csv")
 
 # InSAR side, from scripts/figures/strain_rates.m over the 0-100 m column
-INSAR_FLOOR_USTRAIN_PER_M = 83.0
-INSAR_EXPECTED_USTRAIN_PER_M = 12.3    # thin-plate flexure, H=300 m, L=2 km
+INSAR_FLOOR_MM_PER_M = 8.28            # same-leg systematic floor
+INSAR_EXPECTED_MM_PER_M = -1.23        # thin-plate flexure estimate
 
 
-def admittance_ustrain_per_m(amp_per_yr, period_hours, tide_amp_m):
-    """Strain-rate amplitude [1/yr] -> strain per metre of tide [ustrain/m]."""
-    amp_per_hour = amp_per_yr / (DAYS_PER_YEAR * 24.0)
-    omega = 2.0 * math.pi / period_hours          # [1/h]
-    strain_amp = amp_per_hour / omega             # dimensionless
-    return 1e6 * strain_amp / tide_amp_m
+def load_tide(path):
+    t, h = [], []
+    with open(path) as f:
+        for r in csv.DictReader(f):
+            t.append(float(r["datenum"]))
+            h.append(float(r["tide_m"]))
+    return np.array(t), np.array(h)
+
+
+def to_datenum(iso):
+    d = datetime.fromisoformat(iso.replace(" ", "T"))
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return 719529.0 + (d - epoch).total_seconds() / 86400.0
+
+
+def chain_site(site):
+    """Cumulative displacement dh(z, t) from the chained per-pair fits."""
+    files = sorted(glob.glob(os.path.join(APRES_ROOT, "results", site, "pairs", "*.npz")))
+    recs = []
+    for f in files:
+        d = np.load(f, allow_pickle=True)
+        recs.append(dict(t1=str(d["t1"]), t2=str(d["t2"]),
+                         z=np.asarray(d["fine_range_m"], float),
+                         dh=np.asarray(d["fine_dh_m"], float)))
+    recs.sort(key=lambda r: r["t1"])
+    z0 = recs[0]["z"]                      # common grid; grids differ by <0.03 m
+    t = [to_datenum(recs[0]["t1"])]
+    cum = np.zeros_like(z0)
+    D = [cum.copy()]
+    for r in recs:
+        dh = np.interp(z0, r["z"], r["dh"], left=np.nan, right=np.nan)
+        cum = cum + dh
+        D.append(cum.copy())
+        t.append(to_datenum(r["t2"]))
+    return z0, np.array(t), np.array(D)     # D is (ntime, ndepth)
+
+
+def fit_admittance(t, y, tide):
+    """dh = a + b*t + c*tide, returning c and its 1-sigma. Same model as
+    vdef.fitTideAdmittance: the intercept absorbs the reference constants so
+    b and c are invariant to which epoch is called zero."""
+    ok = np.isfinite(y) & np.isfinite(tide) & np.isfinite(t)
+    if ok.sum() < 6:
+        return np.nan, np.nan
+    tc = t[ok] - t[ok].mean()
+    hc = tide[ok] - tide[ok].mean()
+    if np.std(tc) == 0 or np.std(hc) == 0:
+        return np.nan, np.nan
+    if abs(np.corrcoef(tc, hc)[0, 1]) > 0.99:
+        return np.nan, np.nan
+    X = np.column_stack([np.ones(ok.sum()), tc, hc])
+    beta, *_ = np.linalg.lstsq(X, y[ok], rcond=None)
+    resid = y[ok] - X @ beta
+    dof = max(1, ok.sum() - 3)
+    cov = (resid @ resid / dof) * np.linalg.inv(X.T @ X)
+    return beta[2], math.sqrt(abs(cov[2, 2]))
 
 
 def main():
-    print("ApRES tidal strain-rate amplitude converted to the InSAR quantity")
-    print(f"  diurnal period {DIURNAL_HOURS} h, tidal amplitude {TIDE_AMP_M} m\n")
-    print(f"{'site':6} {'amp[1/yr]':>10} {'strain amp':>12} {'adm[ue/m]':>11} "
-          f"{'span[m]':>9} {'mm over span':>13} {'trust':>6}")
-    for site, d in APRES.items():
-        adm = admittance_ustrain_per_m(d["amp_per_yr"], DIURNAL_HOURS, TIDE_AMP_M)
-        span = d["fit_bot"] - d["fit_top"]
-        mm = adm * 1e-6 * span * 1e3
-        strain_amp = adm * 1e-6 * TIDE_AMP_M
-        print(f"{site:6} {d['amp_per_yr']:10.4f} {1e6*strain_amp:10.2f}ue "
-              f"{adm:11.1f} {span:9.0f} {mm:13.2f} {str(d['trust']):>6}")
+    tt, th = load_tide(TIDE_CSV)
+    print("ApRES tidal response, fitted with the InSAR estimator")
+    print(f"  tide: CATS2008, range {th.max()-th.min():.3f} m over the window\n")
 
-    ga04 = admittance_ustrain_per_m(APRES["GA04"]["amp_per_yr"],
-                                    DIURNAL_HOURS, TIDE_AMP_M)
-    print(f"""
-Comparison over the 0-100 m column, all as strain per metre of tide:
-  ApRES GA04 (independent instrument) {ga04:6.1f} ue/m
-  thin-plate flexure estimate         {INSAR_EXPECTED_USTRAIN_PER_M:6.1f} ue/m
-  InSAR systematic floor              {INSAR_FLOOR_USTRAIN_PER_M:6.1f} ue/m
+    for site in SITES:
+        z, t, D = chain_site(site)
+        tide = np.interp(t, tt, th)
+        adm = np.full(z.size, np.nan)
+        err = np.full(z.size, np.nan)
+        for j in range(z.size):
+            adm[j], err[j] = fit_admittance(t, D[:, j], tide)
+        mm = adm * 1e3                      # m per m of tide -> mm per m of tide
+        mme = err * 1e3
 
-  ApRES vs the flexure estimate: {100*abs(ga04-INSAR_EXPECTED_USTRAIN_PER_M)/INSAR_EXPECTED_USTRAIN_PER_M:.0f}% apart
-  InSAR floor above the ApRES value:  {INSAR_FLOOR_USTRAIN_PER_M/ga04:.1f}x
+        print(f"=== {site}: {D.shape[0]} epochs, {z[0]:.0f}-{z[-1]:.0f} m ===")
+        print(f"{'depth[m]':>9} {'mm per m of tide':>18} {'1-sigma':>9}")
+        for j in range(0, z.size, 10):
+            print(f"{z[j]:9.1f} {mm[j]:18.3f} {mme[j]:9.3f}")
 
-An independent instrument at the same site in the same weeks measures the
-magnitude the flexure model predicts. The signal is real and it is roughly
-seven times below what this method can currently resolve. Because the
-neutral plane sits inside the ApRES fit interval, its value is a lower
-bound, so the true near-surface signal is likely LARGER than {ga04:.0f} ue/m -
-which shortens the gap rather than widening it.
-""")
+        # value at the depth the InSAR figure reports
+        j100 = int(np.argmin(np.abs(z - 100.0)))
+        print(f"\n  at {z[j100]:.0f} m: {mm[j100]:+.3f} +/- {mme[j100]:.3f} mm per metre of tide")
+        print(f"  InSAR expected (flexure model):  {INSAR_EXPECTED_MM_PER_M:+.2f} mm")
+        print(f"  InSAR systematic floor:          {INSAR_FLOOR_MM_PER_M:.2f} mm")
+        if np.isfinite(mm[j100]) and mm[j100] != 0:
+            print(f"  floor / |ApRES|:                 {INSAR_FLOOR_MM_PER_M/abs(mm[j100]):.1f}x")
+        print(f"  ApRES 1-sigma / InSAR floor:     {mme[j100]/INSAR_FLOOR_MM_PER_M:.4f}"
+              "   (how much finer ApRES resolves it)\n")
+
+        # Export for scripts/figures/strain_rates.m, which draws this as the
+        # reference curve instead of a thin-plate model. A measurement from a
+        # second instrument beats a model with a guessed flexure wavelength.
+        out = os.path.join(os.path.dirname(__file__), f"apres_{site}_tide_profile.csv")
+        with open(out, "w") as f:
+            f.write("depth_m,mm_per_m_tide,mm_per_m_tide_err\n")
+            for j in range(z.size):
+                if not np.isfinite(mm[j]):
+                    continue
+                f.write(f"{z[j]:.3f},{mm[j]:.5f},{mme[j]:.5f}\n")
+        print(f"  wrote {out}")
 
 
 if __name__ == "__main__":
