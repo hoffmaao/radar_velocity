@@ -120,9 +120,11 @@ catch ME
   fprintf('grounding line unavailable (%s)\n', ME.message);
 end
 
-% Survey centroid in EPSG:3031, and the whole continent from LIMA, decimated,
+% Survey extent in EPSG:3031, and the whole continent from LIMA, decimated,
 % for a small locator inset. The point of the inset is "where in Antarctica",
 % so it is continent scale rather than a regional view.
+[aoi_x, aoi_y] = projfwd(projcrs(3031), alllat, alllon);
+aoi_x = aoi_x/1e3; aoi_y = aoi_y/1e3;   % km, EPSG:3031
 [cx, cy] = projfwd(projcrs(3031), lat0, lon0);
 lima_ok = false;
 try
@@ -219,8 +221,29 @@ if lima_ok
   axI = axes('parent',h,'Position',[axM_pos(1)+axM_pos(3)-0.113, axM_pos(2)+0.008, 0.105, 0.105]);
   image(axI, lima_x, lima_y, IM);
   set(axI,'YDir','normal'); hold(axI,'on'); axis(axI,'equal');
-  plot(axI, cx/1e3, cy/1e3, 'o', 'MarkerSize', 7, 'MarkerFaceColor', hot, ...
-    'MarkerEdgeColor','w','LineWidth',1.2);
+  % AOI bounding box rather than a point marker.
+  %
+  % HONESTY ABOUT THE SCALE: the survey is about 5 km across and this inset
+  % spans the whole continent, roughly 5500 km, so a true-scale box would be
+  % about a thousandth of the panel - well under one pixel, and invisible.
+  % The box is therefore grown to a minimum on-screen size. It marks WHERE
+  % the survey is, not how big it is; the main panel carries the real
+  % extent, and the box is deliberately square so nobody reads its shape as
+  % the survey's footprint.
+  % The inset spans ~5500 km in ~130 px, so about 42 km per pixel: a 200 km
+  % box came out 5 px and read as a dot. 350 km is ~8 px, which reads as a
+  % square outline, and is still a small fraction of the continent.
+  MIN_BOX_KM = 350;
+  bx0 = mean([min(aoi_x) max(aoi_x)]); by0 = mean([min(aoi_y) max(aoi_y)]);
+  bhw = max((max(aoi_x)-min(aoi_x))/2, MIN_BOX_KM/2);
+  bhh = max((max(aoi_y)-min(aoi_y))/2, MIN_BOX_KM/2);
+  bhw = max(bhw, bhh); bhh = bhw;
+  box_x = bx0 + [-bhw  bhw bhw -bhw -bhw];
+  box_y = by0 + [-bhh -bhh bhh  bhh -bhh];
+  % White underlay first: LIMA is bright in places and dark in others, so a
+  % single-colour outline is not reliably legible on its own
+  plot(axI, box_x, box_y, '-', 'Color', 'w', 'LineWidth', 3.0);
+  plot(axI, box_x, box_y, '-', 'Color', hot, 'LineWidth', 1.6);
   xlim(axI, sort(lima_x)); ylim(axI, sort(lima_y));
   set(axI,'XTick',[],'YTick',[],'Box','on','XColor',ink,'YColor',ink,'LineWidth',1);
   text(axI, 0.5, -0.06, 'LIMA', 'Units','normalized', 'HorizontalAlignment','center', ...
@@ -228,22 +251,39 @@ if lima_ok
 end
 
 %% Render
-out_fn = fullfile(OUT_DIR,'EAGER_2022_survey_movie.avi');
-v = VideoWriter(out_fn, 'Motion JPEG AVI');   % no MPEG-4 on this Linux MATLAB
-v.FrameRate = FPS; v.Quality = 92;
-open(v);
+% PREVIEW_ONLY writes ONE frame as a png and stops, for checking layout and
+% the inset without waiting on a 200 MB encode. Define it before running:
+%   matlab -batch "PREVIEW_ONLY=true; run('.../eastwind_survey_movie.m')"
+if ~exist('PREVIEW_ONLY','var'), PREVIEW_ONLY = false; end
+
 active = false(1,numel(tt));
 for f = 1:numel(tt)
   active(f) = any(tt(f) >= [P.t0] & tt(f) <= [P.t1]);
 end
-af = find(active);
-fprintf('rendering %d frames to %s\n', numel(tt), out_fn);
-fprintf('%d of %d frames have the radar running (%.0f%%); examples: %s\n', ...
-  numel(af), numel(tt), 100*numel(af)/numel(tt), ...
-  strjoin(arrayfun(@(v) sprintf('%d',v), af(round(linspace(1,numel(af),5))), ...
-  'UniformOutput', false), ', '));
 
-for f = 1:numel(tt)
+af = find(active);
+prev_fn = fullfile(OUT_DIR,'EAGER_2022_survey_preview.png');
+
+if PREVIEW_ONLY
+  % A frame with the radar actually RUNNING, so the trail, the moving marker
+  % and the status line are all exercised - the idle state would hide most
+  % of what a preview is for
+  if isempty(af), frames = 1; else, frames = af(max(1,round(numel(af)/2))); end
+  fprintf('PREVIEW_ONLY: rendering frame %d of %d to %s\n', frames, numel(tt), prev_fn);
+else
+  out_fn = fullfile(OUT_DIR,'EAGER_2022_survey_movie.avi');
+  v = VideoWriter(out_fn, 'Motion JPEG AVI'); % no MPEG-4 on this Linux MATLAB
+  v.FrameRate = FPS; v.Quality = 92;
+  open(v);
+  frames = 1:numel(tt);
+  fprintf('rendering %d frames to %s\n', numel(tt), out_fn);
+  fprintf('%d of %d frames have the radar running (%.0f%%); examples: %s\n', ...
+    numel(af), numel(tt), 100*numel(af)/numel(tt), ...
+    strjoin(arrayfun(@(v) sprintf('%d',v), af(round(linspace(1,numel(af),5))), ...
+    'UniformOutput', false), ', '));
+end
+
+for f = frames
   now_t = tt(f);
   set(hTideMark, 'XData', tdn(f), 'YData', tide(f));
   set(hClock, 'String', datestr(epoch2dn(now_t),'yyyy-mm-dd HH:MM UTC'));
@@ -265,14 +305,22 @@ for f = 1:numel(tt)
       100*nnz(sel)/numel(p.gps)));
   end
 
-  % print -RGBImage rather than getframe: reliable on a headless display
-  writeVideo(v, print(h,'-RGBImage','-r96'));
-  if mod(f,200)==0, fprintf('  frame %d/%d\n', f, numel(tt)); end
+  if PREVIEW_ONLY
+    print(h, prev_fn, '-dpng', '-r96');
+  else
+    % print -RGBImage rather than getframe: reliable on a headless display
+    writeVideo(v, print(h,'-RGBImage','-r96'));
+    if mod(f,200)==0, fprintf('  frame %d/%d\n', f, numel(tt)); end
+  end
 end
-close(v);
 close(h);
-d = dir(out_fn);
-fprintf('wrote %s (%.1f MB, %.0f s at %d fps)\n', out_fn, d.bytes/1e6, numel(tt)/FPS, FPS);
+if PREVIEW_ONLY
+  fprintf('wrote %s\n', prev_fn);
+else
+  close(v);
+  d = dir(out_fn);
+  fprintf('wrote %s (%.1f MB, %.0f s at %d fps)\n', out_fn, d.bytes/1e6, numel(tt)/FPS, FPS);
+end
 
 %% ========================================================================
 function dn = epoch2dn(t)
