@@ -168,6 +168,26 @@ product's line mean sits INSIDE that floor for both quantities, at every
 depth. The floor scales as 1/z, from 148 µε/m and 4.3e-2 /yr at 50 m to
 29 µε/m and 8.8e-3 /yr at 250 m.
 
+**Independently confirmed by ApRES (2026-08-06).** Phase-sensitive radar
+was deployed at Windless Bight in the same weeks (GA01, GA04, GA05, GA10;
+`~/projects/EAGER_ApRES`). A harmonic fit to its vertical strain-rate
+series - not a product of that repo, run for this comparison and
+reproduced by `scripts/diagnostics/apres_comparison.py` - shows a diurnal
+tidal strain signal explaining 49-62% of the variance. Converted to the
+quantity this project measures, the trustworthy site (GA04) gives
+**10.2 microstrain per metre of tide**, against the thin-plate flexure
+estimate of 12.3 drawn on the strain-rate figure: 17% apart, from an
+independent instrument. That is 8.1x below the 83 microstrain per metre
+InSAR systematic floor, and because the neutral plane falls inside the
+ApRES fit interval its value is a LOWER bound.
+
+So the expected-signal curve on the figure is not merely a model, the
+tidal strain is real, and the gap is a sensitivity problem rather than an
+absent signal. Advection is not the issue: measured from the per-pass GPS,
+the ice moves 0.3-1.2 m between passes, against 500 m blocks - so over a
+3-day baseline this Eulerian measurement samples effectively the same
+column an ApRES would follow.
+
 **What does survive**: real tidal flexure IS present, measured from the
 GPS alone with no radar (`scripts/diagnostics/gps_flexure.m`). Regressing
 each pass's along-track `ref_z` on its own line mean gives `a(x)` falling
