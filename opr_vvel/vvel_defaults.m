@@ -176,14 +176,29 @@ end
 % POWER, which is insensitive to interferometric coherence - a fully
 % decorrelated pair over the same surface still has a well-defined
 % envelope position, and measuring it is correct, not a failure. What does
-% drive the quality down is a window with no coherent surface return in
-% it at all, where both profiles are flat noise. Real EAGER pairs measure
-% 0.778-1.000; two independent noise fields land far below. 0.5 sits
-% between those populations. Without the floor, a failed measurement is
-% noise over the search range and can land inside coalign_max_lag,
-% applying a spurious bulk shift larger than the artefact being removed.
+% drive the quality down is a window with no coherent surface return in it
+% at all, where both profiles are flat noise.
+%
+% RAISED 0.50 -> 0.85 on 2026-08-13, from the LOOP-CLOSURE evidence.
+% Deformation is additive, so the direct pass i->k measurement must equal
+% the sum of the sequential steps i->i+1->...->k. It did not: closure
+% failed at 0.96 mm rms on GL3 and 3.23 mm on GL4 (worst case 7.05 mm),
+% against an expected secular signal of about 2.4 mm - the internal
+% inconsistency was as large as the quantity being measured. The offenders
+% were the low-quality pairs. On GL4, pass 11 is measured twice over the
+% same interval and disagrees by 6.5 mm: the sequential step 10->11 gives
+% +4.31 mm at quality 0.552 and the direct pair 09->11 gives -2.22 mm at
+% 0.537. Excluding them cut GL4's worst closure error from 7.05 to 4.37 mm.
+%
+% 0.85 is not tuned, it is placed in an empty gap. Over the 84 real pairs
+% with usable coverage the distribution is bimodal: 9 pairs at 0.537-0.800
+% and the other 75 at 0.874-1.000, with NOTHING in between. Any floor in
+% (0.80, 0.87) makes the same 11% cut; 0.85 sits in the middle of the gap.
+% Without the floor a failed measurement is noise over the search range and
+% can land inside coalign_max_lag, applying a spurious bulk shift larger
+% than the artefact being removed.
 if ~isfield(param.vvel,'coalign_min_quality') || isempty(param.vvel.coalign_min_quality)
-  param.vvel.coalign_min_quality = 0.5;
+  param.vvel.coalign_min_quality = 0.85;
 end
 
 % coherence_threshold: samples below this do not constrain the fast-time
