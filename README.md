@@ -202,6 +202,14 @@ Advection is not the issue: measured from the per-pass GPS, the ice moves
 this Eulerian measurement samples effectively the same column an ApRES
 would follow.
 
+**The evidence, in one figure**: `scripts/figures/tidal_evidence.m` draws
+the whole argument - the apparent hinge under a scalar coalignment, its
+disappearance under per-column, the GPS a(x) profile showing the scalar
+residual must flip sign where a(x) = 1, and the collapse of the
+correlation with the artefact predictor. Note the scale in panel (a): the
+apparent signal reached 40 mm per metre of tide against an 8.3 mm floor,
+which is why it was convincing.
+
 **What does survive**: real tidal flexure IS present, measured from the
 GPS alone with no radar (`scripts/diagnostics/gps_flexure.m`). Regressing
 each pass's along-track `ref_z` on its own line mean gives `a(x)` falling
