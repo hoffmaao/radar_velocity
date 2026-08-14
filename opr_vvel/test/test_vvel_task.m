@@ -443,6 +443,82 @@ assert(max(abs(prof_err34)) < 0.4*inj_range34, ...
   'pair 3->4: profile residual %.3f ns is not small against the injected range %.3f ns', ...
   max(abs(prof_err34))*1e9, inj_range34*1e9);
 
+%% Coalignment must not eat the signal it is supposed to leave alone
+% =====================================================================
+% The concern is real and worth a standing guard: coalignPair measures a
+% shift from the surface window and applies it to the whole trace, so does
+% a deforming column drag the alignment along with it, quietly removing
+% the very thing being measured?
+%
+% Two independent reasons it cannot, both asserted here.
+%
+% ONE - it does not SEE the signal. Column deformation moves internal
+% reflectors; it does not move the surface echo, because the antenna-to-
+% surface range is unchanged. So a pair differing ONLY by column strain
+% must coalign to ~0. Built by taking a strained pass and undoing its
+% injected bulk delay, leaving strain as the sole difference.
+%
+% TWO - an alignment error leaks in only WEAKLY, and the coupling is
+% measured here rather than assumed. The correction is constant in DEPTH
+% and vdef.differentialRange reports dtau relative to each trace's own
+% surface reference bin, i.e. a DIFFERENCE across depth, so the constant
+% itself cancels. What does not cancel is the mis-registration: shifting
+% by d means bin t is compared against t-d, so the residual goes as
+% d * (dtau'(t) - dtau'(t_ref)) - the shift times the change in strain
+% between that depth and the reference depth. Second order, not zero.
+%
+% That coupling is the whole reason coalignment accuracy matters, and it
+% closes the artefact story quantitatively. At the ~6% measured here, the
+% scalar coalignment's 3-7 ns residual leaks 0.2-0.4 ns, i.e. 15-35 mm of
+% apparent column change - which is the size of the 30 mm per metre of
+% tide artefact that produced the false hinge. The per-column estimate is
+% good to ~0.25 ns, leaking ~1 mm, comfortably under the 8.3 mm floor.
+D = load(in_fn, 'data');
+k_str = 3;                                   % a pass carrying real strain
+s_ref_c = double(D.data(:,:,1));             % pass 1: no bulk delay injected
+s_str   = double(D.data(:,:,2));             % pass 3 slice (2nd enabled)
+% undo pass 3's injected bulk delay, leaving column strain as the only
+% difference from the reference
+s_str = apply_bulk_delay(s_str, -tau_bulk_true{k_str}, fc, fs);
+clear D;
+
+param_c = vvel_defaults(param);
+[~, info_sig] = vdef.coalignPair(s_ref_c, s_str, ...
+  struct('Time', Time, 'Surface', Surface*ones(1,Nx), 'fc', fc), param_c.vvel);
+fprintf('coalign on a strain-only pair: %.3f ns (quality %.2f)\n', ...
+  info_sig.dtau_bulk*1e9, info_sig.quality);
+assert(abs(info_sig.dtau_bulk) < 0.30e-9, ...
+  ['coalignment measured %.3f ns on a pair whose ONLY difference is column ' ...
+   'strain - it is tracking the signal, not the misalignment'], ...
+  info_sig.dtau_bulk*1e9);
+
+opts_c = param_c.vvel;
+opts_c.delta_t = 1;
+SPUR = 3.0e-9;                                   % 0.9 bins, deliberately wrong
+[ig1, ch1] = vdef.multilook(s_ref_c, s_str, opts_c.mlook_window);
+m1 = struct('Time',Time,'Surface',Surface*ones(1,Nx),'fc',fc, ...
+  'phase',angle(ig1),'coherence',ch1);
+[dt1, ~] = vdef.differentialRange(m1, opts_c);
+s_shift = apply_bulk_delay(s_str, SPUR, fc, fs);
+[ig2, ch2] = vdef.multilook(s_ref_c, s_shift, opts_c.mlook_window);
+m2 = struct('Time',Time,'Surface',Surface*ones(1,Nx),'fc',fc, ...
+  'phase',angle(ig2),'coherence',ch2);
+[dt2, ~] = vdef.differentialRange(m2, opts_c);
+both = isfinite(dt1) & isfinite(dt2);
+dmax = max(abs(dt1(both) - dt2(both)));
+leak = dmax / SPUR;
+fprintf(['a %.2f ns spurious shift moves the referenced dtau by %.4f ns ' ...
+  '(leakage %.1f%%)\n'], SPUR*1e9, dmax*1e9, 100*leak);
+assert(leak < 0.10, ...
+  ['an alignment error leaks into the referenced dtau at %.1f%%, above the ' ...
+   '10%% this method tolerates - the constant is no longer cancelling and ' ...
+   'coalignment accuracy would dominate the result'], 100*leak);
+assert(leak > 0.005, ...
+  ['leakage came out %.3f%%, essentially zero. The mis-registration term is ' ...
+   'real and should be a few percent; a null here means the test is not ' ...
+   'exercising it and would not catch the coupling growing'], 100*leak);
+clear s_ref_c s_str s_shift ig1 ig2 ch1 ch2 m1 m2 dt1 dt2;
+
 %% A scalar-only coalignment must FAIL to remove the along-track structure
 % =====================================================================
 % The guard on the guard. If coalign_win_cols is set to one whole-line
