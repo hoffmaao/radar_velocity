@@ -59,6 +59,13 @@ end
 if ~exist('block_size_override','var'), block_size_override = []; end
 if ~exist('out_suffix','var'), out_suffix = ''; end
 
+% pairing_override: process a different pairing than the table specifies.
+% 'all' gives every unordered pair, which for 13-15 passes is 78-105 pairs
+% against the 12-14 of the 'main' pairing - the redundancy a network
+% inversion needs to average down error and reject inconsistent pairs.
+%   matlab -batch "only_pass_names={'EAGER_2022_GL3'}; pairing_override='all'; out_suffix='_net'; run('.../run_vvel_scratch.m')"
+if ~exist('pairing_override','var'), pairing_override = ''; end
+
 this_dir  = fileparts(mfilename('fullpath'));
 proj_root = fileparts(fileparts(this_dir));
 addpath(proj_root);                                     % +vdef
@@ -98,6 +105,7 @@ for si = 1:size(product_tbl,1)
   pv.in_fn       = in_fn;      % read the shared product in place
   pv.out_path    = [out_path out_suffix];
   pv.out_file_exts = {'.png'};
+  if ~isempty(pairing_override), pairing = pairing_override; end
   pv.pairs       = pairing;
   pv.rerun_only  = true;
 
