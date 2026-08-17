@@ -43,7 +43,7 @@ jobs:
         run: mkdir -p figs opr_vvel/test/output
 
       # Each entrypoint is invoked by name from its own directory, because
-      # all three self-locate with mfilename('fullpath') to find +vdef.
+      # they all self-locate with mfilename('fullpath') to find +vdef.
       #
       # The try/catch is what makes a failed assert fail the job: Octave
       # does not reliably exit non-zero on an uncaught error, so the exit
