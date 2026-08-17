@@ -160,7 +160,7 @@ docker run --rm --platform linux/amd64 -v "$PWD":/work \
   octave --no-gui test_vvel_task.m
 ```
 
-Roughly 16 s, and it currently recovers S1 to 0.6% and S2 to 3.2% of
+Roughly 20 s, and it currently recovers S1 to 0.6% and S2 to 3.2% of
 truth.
 
 ## Deployment on the CReSIS servers

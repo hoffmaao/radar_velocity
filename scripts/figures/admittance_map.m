@@ -3,9 +3,10 @@
 %   Two panels:
 %
 %   (a) MAP. Per-block tidal response (mm of column change per metre of
-%       tide, top 100 m, network inversion) for all five lines, on the
-%       local tangent plane with the MEaSUREs grounding line. Diverging
-%       colour about zero. This is where a spatial pattern would show.
+%       tide, top 100 m, network inversion) for the four calibrated lines,
+%       on the local tangent plane with the MEaSUREs grounding line.
+%       Diverging colour about zero. This is where a spatial pattern would
+%       show.
 %
 %   (b) THE PATTERN TEST. All calibrated lines' per-block responses
 %       against along-track position, with their inverse-variance stack -
@@ -29,9 +30,16 @@ net_dir = fullfile(root,'CSARP_vvel_net');
 gis_dir = '/kucresis/scratch/hoffmana_sta/vvel/gis';
 out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures';
 
-PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
+% EAGER_2022 is deliberately absent: it is the uncalibrated duplicate of
+% GL1 (same physical leg, stale-calibration build, non-reproducible from
+% the archive), so plotting it would double-plot the same ice.
+PASS_NAMES = {'EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
-CALIB = [false true true true true];
+CALIB = [true true true true];
+% Palette/marker index into PAL.cat/PAL.cat_mk, fixed to product identity
+% (GL1 orange square, GL2 aqua triangle, GL3 yellow diamond, GL4 magenta
+% inverted-triangle) - do not re-index by position.
+PAL_IDX = [2 3 4 5];
 REF_DEPTH = 100; MAX_BASELINE = 10; BLOCK = 200;
 H_ICE = 300; NU = 0.33;
 APRES_MM = -1.24; APRES_SE = 0.04;    % rate method, apres_rate_check.py
@@ -50,9 +58,9 @@ for n = 1:numel(PASS_NAMES)
   S = one_line(PASS_NAMES{n}, net_dir, mp_dir, REF_DEPTH, MAX_BASELINE, BLOCK);
   if isempty(S), continue; end
   S.calib = CALIB(n);
-  % pi is the PASS_NAMES index, so palette colour/marker stay tied to the
-  % product identity even when an earlier product was skipped
-  S.pi = n;
+  % palette colour/marker stay tied to the product identity even when an
+  % earlier product was skipped
+  S.pi = PAL_IDX(n);
   if isempty(R), R = S; else, R(end+1) = S; end %#ok<AGROW>
   fprintf('%-16s %2d blocks, adm %.2f..%.2f mm/m\n', S.name, numel(S.adm), ...
     min(S.adm), max(S.adm));

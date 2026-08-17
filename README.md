@@ -28,7 +28,7 @@ Working and validated:
   and `test/test_vvel_task.m`, which builds a synthetic multipass product
   (with a disabled pass in the middle, to cover the pass-index vs
   data-slice mapping) and recovers S1 to 0.6% and S2 to 3.2% of truth in
-  Octave in ~16 s. See `opr_vvel/README.md`.
+  Octave in ~20 s. See `opr_vvel/README.md`.
 
 Run against the real products: all five EAGER_2022 repeat-pass products,
 in the main, sequential and all-pairs pairings, at two along-track block
