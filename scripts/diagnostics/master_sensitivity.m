@@ -1,12 +1,18 @@
 %MASTER_SENSITIVITY Does the choice of main (master) pass change the answer?
 %
-%   THE CLEANEST REPRODUCIBILITY TEST THIS DATASET ADMITS. Two builds of
-%   GL3 from the SAME combine_passes input, the SAME 13 passes, the SAME
-%   frozen calibration vectors - differing in exactly one processing
-%   choice, baseline_master_idx (11, near the end in time, vs 6, near the
-%   middle). Everything the master touches is exercised: the coregistration
-%   target, the resampling grid, the surface reference, the ref_z origin.
-%   Any disagreement IS master-induced systematic; nothing else differs.
+%   THE CLEANEST REPRODUCIBILITY TEST THIS DATASET ADMITS, run for EVERY
+%   line: two builds from the SAME combine_passes input, the SAME passes,
+%   the SAME frozen calibration vectors - differing in exactly one
+%   processing choice, baseline_master_idx (the production choice vs a
+%   middle-of-the-record pass). Everything the master touches is
+%   exercised: the coregistration target, the resampling grid, the surface
+%   reference, the ref_z origin. Any disagreement IS master-induced
+%   systematic; nothing else differs.
+%
+%   First verified on GL3 alone (masters 11 vs 6: admittance 1.84 mm rms =
+%   0.7x expected, secular 0.5x - benign); this generalisation asks the
+%   same question of all five lines, since a master pathology could easily
+%   afflict one product and not another.
 %
 %   Both builds are network-inverted over all 78 pairs first, so the
 %   comparison is of reference-free quantities and the master enters only
@@ -26,29 +32,53 @@ mp_arch = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_mult
 mp_scr  = fullfile(root,'CSARP_multipass');
 REF_DEPTH = 100; MAX_BASELINE = 10;
 
-BUILDS = { ...
-  'EAGER_2022_GL3',     fullfile(root,'CSARP_vvel_net'),    mp_arch; ...
-  'EAGER_2022_GL3_m06', fullfile(root,'CSARP_vvel_netm06'), mp_scr};
+% product, production master (for the report), override master. Override
+% masters are the middle of each record in time; pass index tracks time
+% order in these products. The m-build vvel outputs all live in one dir,
+% CSARP_vvel_netm (names are unique: <product>_mNN_vvel_i_j.mat).
+LINES = { ...
+  'EAGER_2022',     7; ...
+  'EAGER_2022_GL1', 7; ...
+  'EAGER_2022_GL2', 8; ...
+  'EAGER_2022_GL3', 6; ...
+  'EAGER_2022_GL4', 7};
 
-S = [];
-for q = 1:size(BUILDS,1)
-  [pn, vdir, mdir] = BUILDS{q,:};
-  B = one_build(pn, vdir, mdir, REF_DEPTH, MAX_BASELINE);
-  assert(~isempty(B), 'build %s failed to load', pn);
-  if isempty(S), S = B; else, S(end+1) = B; end %#ok<AGROW>
-  fprintf('%-22s master %2d: %2d pairs kept, closure %.2f mm, %d blocks\n', ...
-    pn, B.master, B.n_used, B.closure_mm, numel(B.lat));
+fprintf('\n%-18s %9s %9s | %9s %9s %7s | %9s %7s\n', 'line', ...
+  'masters','blocks','adm rms','adm expct','excess','sec rms','excess');
+for li = 1:size(LINES,1)
+  [pn, mo] = LINES{li,:};
+  pn_m = sprintf('%s_m%02d', pn, mo);
+  % GL3's first m-build predates the shared dir and keeps its own
+  vdir_m = fullfile(root,'CSARP_vvel_netm');
+  if strcmp(pn,'EAGER_2022_GL3'), vdir_m = fullfile(root,'CSARP_vvel_netm06'); end
+  A = one_build(pn,   fullfile(root,'CSARP_vvel_net'), mp_arch, REF_DEPTH, MAX_BASELINE);
+  B = one_build(pn_m, vdir_m,                          mp_scr,  REF_DEPTH, MAX_BASELINE);
+  if isempty(A) || isempty(B)
+    fprintf('%-18s SKIP (missing %s)\n', pn, ternary(isempty(A),'standard','override'));
+    continue;
+  end
+  [da, ea, ds, es] = match_blocks(A, B);
+  if numel(da) < 4
+    fprintf('%-18s SKIP (only %d matched blocks)\n', pn, numel(da));
+    continue;
+  end
+  fprintf('%-18s %4d/%-4d %9d | %9.2f %9.2f %6.1fx | %9.2f %6.1fx\n', ...
+    pn, A.master, B.master, numel(da), ...
+    sqrt(mean(da.^2)), sqrt(mean(ea)), sqrt(mean(da.^2))/sqrt(mean(ea)), ...
+    sqrt(mean(ds.^2)), sqrt(mean(ds.^2))/sqrt(mean(es)));
 end
+fprintf(['\nReading: at ~1x expected the master choice is benign for that\n' ...
+  'line. Well above 1x on any line, that line has a master-keyed\n' ...
+  'systematic the others do not.\n']);
 
-%% Match blocks by position and compare
-A = S(1); B = S(2);
-da = []; ea = []; ds = []; es = []; d_m = [];
+%% ========================================================================
+function [da, ea, ds, es] = match_blocks(A, B)
+da = []; ea = []; ds = []; es = [];
 for k = 1:numel(A.lat)
   dist = hypot((B.lat - A.lat(k))*110540, ...
                (B.lon - A.lon(k))*111320*cosd(A.lat(k)));
   [dmin, m] = min(dist);
   if dmin > 100, continue; end
-  d_m(end+1) = dmin; %#ok<AGROW>
   if isfinite(A.adm(k)) && isfinite(B.adm(m))
     da(end+1) = A.adm(k) - B.adm(m); %#ok<AGROW>
     ea(end+1) = A.adm_std(k)^2 + B.adm_std(m)^2; %#ok<AGROW>
@@ -58,18 +88,12 @@ for k = 1:numel(A.lat)
     es(end+1) = A.sec_std(k)^2 + B.sec_std(m)^2; %#ok<AGROW>
   end
 end
-assert(numel(da) >= 4, 'only %d matched blocks', numel(da));
+end
 
-fprintf('\n===== master 11 vs master 6, same input, same passes =====\n');
-fprintf('matched blocks: %d (median position offset %.0f m)\n', numel(da), median(d_m));
-fprintf('tidal admittance:  rms diff %.2f mm, expected from sigmas %.2f (%.1fx), mean diff %+.2f\n', ...
-  sqrt(mean(da.^2)), sqrt(mean(ea)), sqrt(mean(da.^2))/sqrt(mean(ea)), mean(da));
-fprintf('secular over win:  rms diff %.2f mm, expected from sigmas %.2f (%.1fx), mean diff %+.2f\n', ...
-  sqrt(mean(ds.^2)), sqrt(mean(es)), sqrt(mean(ds.^2))/sqrt(mean(es)), mean(ds));
-fprintf(['\nReading: at ~1x expected, the master choice is benign and the\n' ...
-  'between-build floor must come from something else. Well above 1x, the\n' ...
-  'master IS the undiagnosed systematic, and a middle master (balanced\n' ...
-  'intervals, shortest mean baseline) should become the standard.\n']);
+%% ========================================================================
+function v = ternary(c,a,b)
+if c, v = a; else, v = b; end
+end
 
 %% ========================================================================
 function B = one_build(pn, vdir, mdir, REF_DEPTH, MAX_BASELINE)

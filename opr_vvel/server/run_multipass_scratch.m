@@ -106,6 +106,16 @@ param.multipass.time_gate = [];
 param.multipass.debug_plots = {'debug','coherent'};
 
 switch product
+  case 'EAGER_2022'
+    % The uncalibrated original: archived param carries
+    % coregistration_time_shift all ZEROS and equalization all ONES, and
+    % that is reproduced - this build documents the pipeline default, it
+    % does not repair it.
+    param.multipass.baseline_master_idx = 1;
+    param.multipass.master_idx = 1;
+    param.multipass.pass_en_mask = true(1,13);
+    param.multipass.coregistration_time_shift = zeros(1,13);
+    param.multipass.equalization = ones(1,13);
   case 'EAGER_2022_GL1'
     param.multipass.baseline_master_idx = 14;
     param.multipass.master_idx = 14;

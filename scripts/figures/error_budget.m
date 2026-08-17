@@ -46,6 +46,15 @@ REF_DEPTH = 100; MAX_BASELINE = 10;
 % Measured elsewhere in the project, cited so the bars are traceable
 SIG_APRES   = 3.79;   % mm per m of tide at 100 m, ApRES GA04
 FLOOR_BUILD = 8.28;   % mm, EAGER_2022 vs GL1 same-leg disagreement
+% DECOMPOSED 2026-08-17 (diagnostics/between_build.m, master_sensitivity.m):
+% the between-build disagreement quoted against what the two builds' own
+% sigmas predict is 1.2-1.5x for calibrated pairs and 2.6x for EAGER_2022
+% vs GL1. In quadrature-excess terms per block that is a median 3.6 mm
+% among GL1-GL4 and 7.7 mm for the EAGER_2022 comparison. The master-pass
+% choice is CLEARED: same input, same passes, master 11 vs 6 differs by
+% 0.7x expected - i.e. measured zero excess.
+XS_CALIB = 3.6;       % mm/block, median quadrature excess, calibrated pairs
+XS_EAGER = 7.7;       % mm/block, EAGER_2022 vs GL1 quadrature excess
 N_ALLLEGS   = 50;     % traverses an all-legs combine_passes rebuild would give
 
 PAL.cat = [0.165 0.471 0.839; 0.922 0.408 0.204; 0.106 0.686 0.478; ...
@@ -132,9 +141,11 @@ axst = {'GridAlpha',0.15,'XColor',PAL.ink_soft,'YColor',PAL.ink_soft,'Box','off'
 ax1 = axes('parent',h,'Position',[0.20 0.585 0.30 0.345]);
 set(0,'CurrentFigure',h); hold(ax1,'on');
 lbl = {'per-pair noise','per-pass systematic','model (phase lag)', ...
-       'unexplained','WITHIN-PRODUCT','BETWEEN-BUILD'};
-val = [closure_mm perpass_mm model_mm unexpl_mm tot_res FLOOR_BUILD];
-col = [PAL.cat(3,:); PAL.cat(3,:); PAL.cat(3,:); PAL.cat(2,:); PAL.ink_soft; PAL.cat(2,:)];
+       'master choice (cleared)','unexplained','WITHIN-PRODUCT', ...
+       'build excess, calibrated','build excess, EAGER\_2022'};
+val = [closure_mm perpass_mm model_mm 0 unexpl_mm tot_res XS_CALIB XS_EAGER];
+col = [PAL.cat(3,:); PAL.cat(3,:); PAL.cat(3,:); PAL.cat(3,:); ...
+       PAL.cat(2,:); PAL.ink_soft; PAL.cat(2,:); PAL.cat(2,:)];
 for k = 1:numel(val)
   barh(ax1, k, val(k), 0.62, 'FaceColor', col(k,:), 'EdgeColor','none');
 end
@@ -145,7 +156,7 @@ text(ax1, SIG_APRES, numel(val)+0.55, ' ApRES signal', 'Color', PAL.ink, ...
 set(ax1,'YTick',1:numel(val),'YTickLabel',lbl,'YDir','reverse');
 grid(ax1,'on'); set(ax1, axst{:}); ylim(ax1,[0.4 numel(val)+0.6]);
 xlabel(ax1,'mm of column change, top 100 m','Color',PAL.ink);
-title(ax1,'(a) Everything that has been measured','Color',PAL.ink);
+title(ax1,'(a) Everything that has been measured (green = eliminated)','Color',PAL.ink);
 
 % (b) closure per pair
 ax2 = axes('parent',h,'Position',[0.60 0.585 0.355 0.345]);

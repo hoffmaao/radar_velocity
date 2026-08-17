@@ -1,5 +1,13 @@
 %STRAIN_RATES How much does the ice column actually change thickness?
 %
+%   METHOD (2026-08-17): everything here comes from the NETWORK inversion
+%   (vdef.invertNetwork) over ALL pairs of each product - 78-105 pairs
+%   against the 12-14 a single-reference pairing used - with robust
+%   rejection, then the joint x = a + b*t + c*tide fit on the per-pass
+%   displacements. No reference pass exists anywhere in the chain, and
+%   the same estimator produced every number and every reference line on
+%   the figure. Requires the CSARP_vvel_net products (pairs='all').
+%
 %   EVERYTHING HERE IS IN MILLIMETRES OF COLUMN THICKNESS CHANGE, because
 %   that is the thing being measured and the thing a reader can picture.
 %   Earlier versions reported "tide admittance" in microstrain per metre
@@ -34,7 +42,7 @@
 
 addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
 
-if ~exist('VVEL_SUFFIX','var'), VVEL_SUFFIX = '_v3'; end
+if ~exist('VVEL_SUFFIX','var'), VVEL_SUFFIX = '_net'; end
 vvel_dir = ['/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_vvel' VVEL_SUFFIX];
 mp_dir   = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 out_dir  = '/kucresis/scratch/hoffmana_sta/vvel/figures';
@@ -329,6 +337,9 @@ end
 
 %% ========================================================================
 function R = analyse(pass_name, vvel_dir, mp_dir, DEPTHS, MAX_BASELINE, MIN_PAIRS)
+% Network version: load EVERY pair, build (block x depth) strain rows,
+% invert the pass network once, then fit time+tide per depth. MIN_PAIRS
+% here gates the PAIR COUNT of the network, not a per-block sample count.
 R = [];
 f = dir(fullfile(vvel_dir, [pass_name '_vvel_*.mat']));
 keep = ~cellfun('isempty', regexp({f.name}, ...
@@ -337,58 +348,60 @@ f = f(keep);
 if isempty(f), warning('no products for %s', pass_name); return; end
 
 L = load(fullfile(mp_dir, sprintf('%s_multipass03.mat', pass_name)), 'pass');
-Np = numel(L.pass); elev = nan(1,Np);
-for k = 1:Np, elev(k) = mean(L.pass(k).elev,'omitnan'); end
+Np = numel(L.pass); elev = nan(1,Np); ptime = nan(1,Np);
+for k = 1:Np
+  elev(k)  = mean(L.pass(k).elev,'omitnan');
+  ptime(k) = mean(L.pass(k).gps_time,'omitnan');
+end
 clear L;
 
-spy = 365.25*86400;
-np = numel(f); nz = numel(DEPTHS);
-strain = []; tide = nan(1,np); tday = nan(1,np); mb = nan(1,np);
-along = []; lat = []; lon = []; ref0 = NaN;
-for i = 1:np
-  o = load(fullfile(vvel_dir, f(i).name));
-  if isnan(ref0), ref0 = o.pass_idx_ref; end
-  if o.pass_idx_ref ~= ref0
-    error('%s: %s is referenced to pass %d but the first product uses %d; this script assumes the "main" pairing.', ...
-      pass_name, f(i).name, o.pass_idx_ref, ref0);
-  end
-  if isempty(strain)
-    strain = nan(numel(o.S1), np, nz);
+nz = numel(DEPTHS);
+P = []; D = []; W = []; along = []; lat = []; lon = []; Nblk = 0;
+for q = 1:numel(f)
+  tok = regexp(f(q).name, ['^' regexptranslate('escape',pass_name) '_vvel_(\d+)_(\d+)\.mat$'], ...
+    'tokens','once');
+  if isempty(tok), continue; end
+  o = load(fullfile(vvel_dir, f(q).name));
+  if isfield(o,'coalign_applied') && ~o.coalign_applied, continue; end
+  if max(abs(o.baseline_y)) > MAX_BASELINE, continue; end
+  if Nblk == 0
+    Nblk = numel(o.S1);
     along = o.Along_track(:); lat = o.Latitude(:); lon = o.Longitude(:);
   end
-  for b = 1:size(strain,1)
+  sv = nan(Nblk*nz, 1);          % rows ordered (b,z) = (b-1)*nz + z
+  for b = 1:Nblk
     d = o.depth_blk(:,b); ok = isfinite(d) & isfinite(o.dh_blk(:,b));
     if ~any(ok), continue; end
     for z = 1:nz
       if max(d(ok)) < DEPTHS(z), continue; end
-      strain(b,i,z) = interp1(d(ok), o.dh_blk(ok,b), DEPTHS(z), 'linear', NaN) ...
+      sv((b-1)*nz + z) = interp1(d(ok), o.dh_blk(ok,b), DEPTHS(z),'linear',NaN) ...
         / DEPTHS(z);
     end
   end
-  tide(i) = elev(o.pass_idx_sec) - elev(ref0);
-  tday(i) = mean(o.GPS_time + o.delta_t_blk*spy,'omitnan')/86400;
-  mb(i)   = max(abs(o.baseline_y));
+  if all(~isfinite(sv)), continue; end
+  if isempty(D), D = sv; else, D(:,end+1) = sv; end %#ok<AGROW>
+  P(end+1,:) = [str2double(tok{1}), str2double(tok{2})]; %#ok<AGROW>
+  W(end+1) = max(mean(o.coh_blk(:),'omitnan'),1e-3); %#ok<AGROW>
 end
-
-use = ~(isfinite(mb) & mb > MAX_BASELINE);
-if nnz(use) < MIN_PAIRS
-  warning('%s: only %d pairs survive the baseline cut', pass_name, nnz(use));
+if size(P,1) < MIN_PAIRS
+  warning('%s: only %d usable pairs', pass_name, size(P,1));
   return;
 end
-strain = strain(:,use,:); tide = tide(use); tday = tday(use) - min(tday(use));
+
+N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W));
+tday = (ptime - min(ptime))/86400;
+tide = elev - mean(elev);
 span = max(tday) - min(tday);
 
-Nblk = size(strain,1);
 R = struct('name', pass_name, 'along', along, 'lat', lat, 'lon', lon, ...
-  'npair', nnz(use), 'span', span, ...
+  'npair', size(P,1), 'span', span, ...
   'tide_mm', nan(Nblk,nz), 'tide_mm_std', nan(Nblk,nz), ...
   'sec_mm',  nan(Nblk,nz), 'sec_mm_std',  nan(Nblk,nz));
 for z = 1:nz
-  A = vdef.fitTideAdmittance(strain(:,:,z), tday, tide);
-  % strain -> millimetres of column thickness change: multiply by the depth
+  X = N.x((0:Nblk-1)*nz + z, :);          % Nblk x Nep at this depth
+  A = vdef.fitTideAdmittance(X, tday, tide);
   R.tide_mm(:,z)     = 1e3 * A.admittance(:)     * DEPTHS(z);
   R.tide_mm_std(:,z) = 1e3 * A.admittance_std(:) * DEPTHS(z);
-  % trend is per DAY; report the change over the window actually observed
   R.sec_mm(:,z)      = 1e3 * A.trend(:)     * span * DEPTHS(z);
   R.sec_mm_std(:,z)  = 1e3 * A.trend_std(:) * span * DEPTHS(z);
 end
