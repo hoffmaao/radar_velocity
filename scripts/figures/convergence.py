@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
 """The convergence figure: three independent estimates of the tidal response.
 
-One page, two panels:
+Two panels, no in-plot text - axis labels only, with identity and context
+carried by the caption (by request):
 
-  (a) the ApRES evidence, shown as the measurement it actually is: 276
-      half-hour strain rates from GA04's own pair products against the
-      CATS2008 tide rate. If strain = A*tide the slope IS A - no chaining,
-      no cumulative drift, nothing of ours between the instrument and the
-      number.
+  (a) ALL ApRES sites' half-hour strain rates against the CATS2008 tide
+      rate: GA04 orange, GA01 aqua, GA05 yellow, GA10 magenta. The fitted
+      line is GA04 only - the one site whose bed pick holds - and its slope
+      is the rate-method number of record (-1.24 +/- 0.04 mm per metre of
+      tide over the top 100 m, R2 = 0.75). GA01's visibly distinct cloud is
+      the broken-bed-pick site behaving differently, which is why it is not
+      pooled. One GA01 outlier (~430 ue/day) sits above the axis clip.
 
-  (b) every estimate of A on one axis, in mm of column-thickness change
-      per metre of tide over the top 100 m: the thin-plate flexure model
-      (drawn as a band, because its curvature goes as 1/L^2 and the
-      flexure length is not measured), the ApRES value from (a), the four
-      calibrated radar lines from the network inversion, and the pooled
-      radar value. EAGER_2022 appears hollow - uncalibrated AND
-      non-reproducible, excluded from the pool. The retracted chained
-      ApRES analysis (+3.79) is marked faintly because pretending it never
-      happened would misrepresent how the agreement was reached.
+  (b) every estimate of the tidal response on one axis: the flexure model
+      band (curvature goes as 1/L^2 with L unmeasured), ApRES GA04, the
+      four calibrated radar lines from the network inversion, the pooled
+      radar value, EAGER_2022 (hollow: uncalibrated and non-reproducible,
+      excluded), and the retracted chained-analysis value as its own
+      labelled row so the history stays visible.
 
-Radar numbers are from diagnostics/line_means.m on the network products
-(2026-08-17 run) and are cited, not recomputed - this script has no server
-access. The ApRES regression is recomputed live from the local repo so the
-panel is evidence, not a quotation.
+Radar numbers are cited constants from diagnostics/line_means.m (network
+products, 2026-08-17); the ApRES regressions are recomputed live from the
+local EAGER_ApRES repo. Built locally in Python - the ApRES data exists
+only on this machine.
 
 Run from the repo root:  python3 scripts/figures/convergence.py
 Writes figs/EAGER_2022_convergence.png
@@ -57,8 +57,8 @@ MODEL_MID, MODEL_LO, MODEL_HI = -1.23, -2.2, -0.55   # L = 1.5..3 km
 RETRACTED_CHAIN = 3.79               # apres_comparison.py chaining artefact
 
 
-def apres_regression():
-    """GA04 vsr vs tide rate; returns points and the fit, as in
+def apres_regression(site="GA04"):
+    """One site's vsr vs tide rate; points and (for GA04) the fit, as in
     diagnostics/apres_rate_check.py."""
     tt, th = [], []
     with open(os.path.join(ROOT, "scripts/diagnostics/cats2008_apres_window.csv")) as f:
@@ -77,7 +77,7 @@ def apres_regression():
         return 719529.0 + (dt - epoch).total_seconds() / 86400.0
 
     xs, ys = [], []
-    src = os.path.expanduser("~/projects/EAGER_ApRES/results/GA04/pair_results.csv")
+    src = os.path.expanduser(f"~/projects/EAGER_ApRES/results/{site}/pair_results.csv")
     with open(src) as f:
         for r in csv.DictReader(f):
             try:
@@ -94,6 +94,9 @@ def apres_regression():
                 continue
             xs.append(tr); ys.append(vsr / 365.25)
     n = len(xs)
+    if n < 3:
+        # too few pairs for a fit (GA05/GA10 have handfuls); points only
+        return xs, ys, float("nan"), float("nan"), float("nan"), 0.0, 0.0
     mx = sum(xs) / n; my = sum(ys) / n
     sxx = sum((x - mx) ** 2 for x in xs)
     sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
@@ -105,35 +108,43 @@ def apres_regression():
 
 
 def main():
-    xs, ys, A, se, r2, mx, my = apres_regression()
-    A_mm = 1e3 * A * 100          # strain per m -> mm per m over 100 m
+    # every site with pair products; GA04 is the site of record (stable bed
+    # pick), the others are context. Identity is carried by colour and told
+    # in the caption - the figure itself carries no in-plot text beyond the
+    # axis labels, by request.
+    SITES = [("GA04", ORANGE, 0.5, 16),
+             ("GA01", AQUA,   0.3, 12),
+             ("GA05", YELLOW, 0.6, 20),
+             ("GA10", MAGENTA, 0.6, 20)]
+    xs, ys, A, se, r2, mx, my = apres_regression("GA04")
+    A_mm = 1e3 * A * 100
     se_mm = 1e3 * se * 100
 
     fig, (ax1, ax2) = plt.subplots(
         1, 2, figsize=(13.2, 5.4), dpi=150,
-        gridspec_kw={"width_ratios": [1.0, 1.05], "wspace": 0.52})
+        gridspec_kw={"width_ratios": [1.0, 1.05], "wspace": 0.60})
     fig.patch.set_facecolor("white")
 
-    # ---- (a) the ApRES evidence -------------------------------------
+    # ---- (a) all ApRES sites, rate vs tide rate ----------------------
     ax1.axhline(0, color="#bfbfbf", lw=1)
     ax1.axvline(0, color="#bfbfbf", lw=1)
-    ax1.scatter([x for x in xs], [1e6 * y for y in ys], s=14, color=ORANGE,
-                alpha=0.45, edgecolors="none", zorder=2)
+    for site, col, alpha, size in SITES:
+        try:
+            sx, sy, *_ = apres_regression(site)
+        except FileNotFoundError:
+            continue
+        ax1.scatter(sx, [1e6 * y for y in sy], s=size, color=col,
+                    alpha=alpha, edgecolors="none", zorder=2)
     xf = [min(xs), max(xs)]
     ax1.plot(xf, [1e6 * (my + A * (x - mx)) for x in xf], color=INK, lw=2.2,
              zorder=3)
+    # one GA01 point sits at ~430 ue/day (the broken-bed-pick site); the
+    # axis holds the bulk of the data and the caption notes the clip
+    ax1.set_ylim(-135, 145)
     ax1.set_xlabel("tide rate (m per day)", color=INK)
     ax1.set_ylabel("ApRES strain rate ($\\mu\\epsilon$ per day)", color=INK)
-    ax1.set_title("(a) ApRES GA04: their own half-hour strain rates\n"
-                  f"follow the tide rate  (n={len(xs)}, $R^2$={r2:.2f})",
-                  color=INK, fontsize=11)
-    ax1.text(0.03, 0.04,
-             f"slope: {A_mm:+.2f} $\\pm$ {se_mm:.2f} mm per metre of tide\n"
-             "(over the top 100 m; rising tide $\\rightarrow$ column thins)",
-             transform=ax1.transAxes, fontsize=9.5, color=INK,
-             va="bottom")
-    for s in ("top", "right"):
-        ax1.spines[s].set_visible(False)
+    for sp in ("top", "right"):
+        ax1.spines[sp].set_visible(False)
     ax1.tick_params(colors=INK_SOFT)
     ax1.grid(alpha=0.18)
 
@@ -149,7 +160,9 @@ def main():
     rows.append((y, "radar pooled (GL1$-$GL4)", RADAR_POOLED[0], RADAR_POOLED[1],
                  BLUE, "o", True, False)); y += 1.4
     rows.append((y, "EAGER_2022 (uncalibrated, excluded)", EAGER[0], EAGER[1],
-                 INK_SOFT, "o", False, True)); y += 1
+                 INK_SOFT, "o", False, True)); y += 1.2
+    rows.append((y, "chained ApRES analysis (retracted)", RETRACTED_CHAIN, None,
+                 INK_SOFT, "x", False, False)); y += 1
 
     ax2.axvspan(MODEL_LO, MODEL_HI, color=BAND, zorder=0)
     ax2.axvline(MODEL_MID, color=INK, lw=1.6, ls="--", zorder=1)
@@ -161,29 +174,22 @@ def main():
         if e is not None:
             ax2.plot([v - e, v + e], [yy, yy], color=c, lw=2.2 if bold else 1.4,
                      zorder=3)
+        if m == "x":
+            ax2.plot(v, yy, m, ms=9, color=c, mew=1.8, zorder=3)
+            continue
         face = "white" if hollow else c
-        ax2.plot(v, yy, m, ms=11 if bold else 8, mfc=face, mec=c if hollow else "white",
-                 mew=1.4, color=c, zorder=4)
-
-    # the retracted value, faint, so the history is visible
-    yr = rows[-1][0] + 1.2
-    ax2.plot(RETRACTED_CHAIN, yr, "x", ms=9, color=INK_SOFT, mew=1.8, zorder=3)
-    ax2.text(RETRACTED_CHAIN - 0.35, yr, "chained ApRES analysis\n(retracted artefact)  ",
-             fontsize=8, color=INK_SOFT, ha="right", va="center")
+        ax2.plot(v, yy, m, ms=11 if bold else 8, mfc=face,
+                 mec=c if hollow else "white", mew=1.4, color=c, zorder=4)
 
     ax2.set_yticks([r[0] for r in rows])
     ax2.set_yticklabels([r[1] for r in rows], fontsize=9.5, color=INK)
     ax2.invert_yaxis()
-    ax2.set_ylim(yr + 1.6, -0.8)
+    ax2.set_ylim(rows[-1][0] + 0.9, -0.8)
     ax2.set_xlim(-5.6, 5.0)
     ax2.set_xlabel("column thickness change per metre of tide,\ntop 100 m (mm)",
                    color=INK)
-    ax2.set_title("(b) Three independent routes, one answer", color=INK,
-                  fontsize=11)
-    ax2.text(MODEL_MID, rows[-1][0] + 0.55, "model", fontsize=8.5, color=INK,
-             ha="center", va="top")
-    for s in ("top", "right", "left"):
-        ax2.spines[s].set_visible(False)
+    for sp in ("top", "right", "left"):
+        ax2.spines[sp].set_visible(False)
     ax2.tick_params(colors=INK_SOFT, left=False)
     ax2.grid(axis="x", alpha=0.18)
 
@@ -191,8 +197,8 @@ def main():
     os.makedirs(os.path.dirname(out), exist_ok=True)
     fig.savefig(out, bbox_inches="tight", facecolor="white")
     print(f"wrote {out}")
-    print(f"ApRES: {A_mm:+.2f} +/- {se_mm:.2f} mm/m | radar pooled "
-          f"{RADAR_POOLED[0]:+.2f} +/- {RADAR_POOLED[1]:.2f} | model {MODEL_MID:+.2f}")
+    print(f"ApRES GA04: {A_mm:+.2f} +/- {se_mm:.2f} mm/m (R2={r2:.2f}) | "
+          f"radar pooled {RADAR_POOLED[0]:+.2f} +/- {RADAR_POOLED[1]:.2f} | model {MODEL_MID:+.2f}")
 
 
 if __name__ == "__main__":
