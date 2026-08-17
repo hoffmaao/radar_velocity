@@ -425,6 +425,21 @@ else
 end
 file_type = 'vvel';
 
+% Provenance: enough to answer, from the product alone, "what code built
+% this, from which input, on what". The input is identified by name, size
+% and mtime rather than a content hash - hashing 1.3 GB per pair would
+% dominate the runtime, and verify_multipass_rerun.m already guards the
+% input's content against the archive bit-for-bit.
+code_version = vvel_code_version();
+input_fn = mp.in_fn;
+di = dir(input_fn);
+if isempty(di)
+  input_bytes = NaN; input_mtime = '';
+else
+  input_bytes = di(1).bytes; input_mtime = di(1).date;
+end
+matlab_version = version();
+
 fprintf('Saving output file:\n  %s\n', out_fn);
 opr_save(out_fn,'eps_zz','depth_grid','v_fit','S1','S2','epszz_mean','p_quad', ...
   'coef','coef_std','fit_rms','n_used','n_eff','norm_depth', ...
@@ -441,7 +456,8 @@ opr_save(out_fn,'eps_zz','depth_grid','v_fit','S1','S2','epszz_mean','p_quad', .
   'Latitude','Longitude','Elevation','Along_track', ...
   'pass_idx_ref','pass_idx_sec','baseline_main_idx','surf_flatten_en', ...
   'param_vvel','param_multipass','param_combine_passes', ...
-  'file_type','file_version');
+  'file_type','file_version', ...
+  'code_version','input_fn','input_bytes','input_mtime','matlab_version');
 
 for file_ext = param.vvel.out_file_exts
   file_ext = file_ext{1};

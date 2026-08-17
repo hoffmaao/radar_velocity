@@ -6,6 +6,35 @@ be regenerated from the archived inputs and PROVEN identical, and that a
 processing variant (different master pass, different pairing) can be
 built without touching the standard products.
 
+## The whole thing, one command
+
+Deploy (stamps the code version into the tree - bare rsync does not):
+
+    opr_vvel/server/deploy.sh
+
+Then, on the server, detached so it survives a dropped connection:
+
+    setsid nohup <code>/opr_vvel/server/reproduce_all.sh \
+        < /dev/null > /dev/null 2>&1 &
+
+It refuses to start unless the environment matches
+`environment.pin` (OPR toolbox SHA including the headless docking patch,
+MATLAB version), then rebuilds multipass for GL1-GL4, verifies the
+rebuilds bit-identical to the archive, rebuilds every vvel variant the
+standing analyses read (main / sequential / all-pairs / 2.5 km blocks /
+master-override), and reruns all diagnostics and figures. Per-stage logs
+land in `.../vvel/logs/repro_*.log`, the summary in `reproduce_all.log`,
+and `reproduce_all_done` appears at the end. Idempotent: finished outputs
+are skipped, so rerunning after an interruption resumes. Every vvel
+product records `code_version`, `input_fn`/`input_bytes`/`input_mtime`
+and `matlab_version`, so any file can answer "what built me" on its own.
+
+EAGER_2022 is the standing exception: its archived combine_passes input
+was replaced after the product was built (10 passes on disk against the
+product's 13), so stage 1 cannot include it and `run_multipass_scratch.m`
+refuses it with that explanation. Its DERIVED products still rebuild from
+the archived multipass03 file.
+
 ## The chain
 
 ```
@@ -79,14 +108,12 @@ Pairings: `'main'` (every pass against the product's master),
 
 ## Long jobs and connectivity
 
-Launch chains detached so they survive a dropped ssh session:
-
-    setsid nohup <code>/run_chain.sh < /dev/null > /dev/null 2>&1 &
-
-`run_chain.sh` writes per-step logs to `.../vvel/logs/` and touches
-`chain_done` when finished; poll for that file rather than holding a
-connection open. `pkill -f <pattern>` over ssh matches the remote shell
-issuing it - kill by exact pid instead.
+`reproduce_all.sh` is already detached-safe when launched under
+`setsid nohup ... < /dev/null`; poll for `reproduce_all_done` rather than
+holding a connection open. The same pattern applies to any one-off job.
+`pkill -f <pattern>` over ssh matches the remote shell issuing it - kill
+by exact pid instead. (The ad-hoc run_chain*.sh scripts from Aug 2026 are
+superseded by reproduce_all.sh and deleted.)
 
 ## Standing QC, in order of what they catch
 

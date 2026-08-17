@@ -51,9 +51,7 @@ fprintf('\n%-18s %9s %9s | %9s %9s %7s | %9s %7s\n', 'line', ...
 for li = 1:size(LINES,1)
   [pn, mo] = LINES{li,:};
   pn_m = sprintf('%s_m%02d', pn, mo);
-  % GL3's first m-build predates the shared dir and keeps its own
   vdir_m = fullfile(root,'CSARP_vvel_netm');
-  if strcmp(pn,'EAGER_2022_GL3'), vdir_m = fullfile(root,'CSARP_vvel_netm06'); end
   A = one_build(pn,   fullfile(root,'CSARP_vvel_net'), mp_arch, REF_DEPTH, MAX_BASELINE);
   B = one_build(pn_m, vdir_m,                          mp_scr,  REF_DEPTH, MAX_BASELINE);
   if isempty(A) || isempty(B)
