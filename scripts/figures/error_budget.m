@@ -18,15 +18,18 @@
 %       which is where it is actionable - one pass dominates.
 %
 %   (d) WHAT MORE EPOCHS CANNOT FIX. Formal precision falls as
-%       1/sqrt(N_passes), and at 13 passes it is ALREADY below the ApRES
-%       signal - so the measurement is not precision-limited. The
+%       1/sqrt(N_passes). At 13 passes the single-line formal precision
+%       (~1.5 mm) is comparable to - marginally above - the 1.24 mm ApRES
+%       rate-method signal, and pooling the four calibrated lines
+%       (0.55 mm, line_means.m) puts the measurement clearly below it. The
 %       between-build disagreement is not a precision term and does not
 %       move with N at all. Panel (d) draws both, and the gap between them
 %       is the honest statement of what is wrong: the formal error badly
 %       understates the true one, and the term that dominates has not yet
 %       been diagnosed. An earlier reading of this budget called more
 %       epochs "the only lever left"; that was wrong, and this panel is
-%       what corrects it.
+%       what corrects it - more epochs cannot cross the between-build
+%       reproducibility floor.
 %
 %   Requires the network product (pairs='all'):
 %     matlab -batch "only_pass_names={'EAGER_2022_GL3'}; pairing_override='all'; out_suffix='_net'; run('.../run_vvel_scratch.m')"
