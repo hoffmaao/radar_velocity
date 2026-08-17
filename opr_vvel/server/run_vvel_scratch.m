@@ -38,6 +38,12 @@ product_tbl = { ...
   'EAGER_2022_GL3', 'sequential', 'vvel_seq'; ...
   'EAGER_2022_GL4', 'sequential', 'vvel_seq'};
 
+% For products outside the standard table/archive (e.g. a master-override
+% build in scratch): supply the table and input dir whole. Defaults FIRST -
+% an earlier revision defaulted these after this use and errored on every
+% standard invocation.
+if ~exist('product_tbl_override','var'), product_tbl_override = []; end
+if ~exist('mp_dir_override','var'), mp_dir_override = ''; end
 if ~isempty(product_tbl_override), product_tbl = product_tbl_override; end
 if ~isempty(mp_dir_override), mp_dir = mp_dir_override; end
 
@@ -69,12 +75,6 @@ if ~exist('out_suffix','var'), out_suffix = ''; end
 %   matlab -batch "only_pass_names={'EAGER_2022_GL3'}; pairing_override='all'; out_suffix='_net'; run('.../run_vvel_scratch.m')"
 if ~exist('pairing_override','var'), pairing_override = ''; end
 
-% For products that live outside the standard table/archive (e.g. a
-% master-override build in scratch): supply the table and input dir whole.
-%   product_tbl_override = {'EAGER_2022_GL3_m06','all','vvel'};
-%   mp_dir_override = '<scratch>/CSARP_multipass';
-if ~exist('product_tbl_override','var'), product_tbl_override = []; end
-if ~exist('mp_dir_override','var'), mp_dir_override = ''; end
 
 this_dir  = fileparts(mfilename('fullpath'));
 proj_root = fileparts(fileparts(this_dir));

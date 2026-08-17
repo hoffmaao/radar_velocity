@@ -107,15 +107,15 @@ param.multipass.debug_plots = {'debug','coherent'};
 
 switch product
   case 'EAGER_2022'
-    % The uncalibrated original: archived param carries
-    % coregistration_time_shift all ZEROS and equalization all ONES, and
-    % that is reproduced - this build documents the pipeline default, it
-    % does not repair it.
-    param.multipass.baseline_master_idx = 1;
-    param.multipass.master_idx = 1;
-    param.multipass.pass_en_mask = true(1,13);
-    param.multipass.coregistration_time_shift = zeros(1,13);
-    param.multipass.equalization = ones(1,13);
+    % NOT REBUILDABLE. The archived multipass03 product holds 13 passes,
+    % but the archived combine_passes input EAGER_2022.mat now holds only
+    % 10 - the input was replaced after the product was built. Any rerun
+    % from the current archive produces a DIFFERENT product under the same
+    % name, which is worse than no rerun. (Also the reason the 13-wide
+    % pass_en_mask crashed multipass on the 10-pass input.)
+    error(['EAGER_2022 cannot be rebuilt: archived combine_passes input ' ...
+      'has 10 passes, archived multipass03 has 13. The input predating ' ...
+      'the swap would be needed.']);
   case 'EAGER_2022_GL1'
     param.multipass.baseline_master_idx = 14;
     param.multipass.master_idx = 14;

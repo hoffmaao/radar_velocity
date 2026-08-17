@@ -36,8 +36,11 @@ REF_DEPTH = 100; MAX_BASELINE = 10;
 % masters are the middle of each record in time; pass index tracks time
 % order in these products. The m-build vvel outputs all live in one dir,
 % CSARP_vvel_netm (names are unique: <product>_mNN_vvel_i_j.mat).
+% EAGER_2022 is ABSENT deliberately: its archived combine_passes input
+% now holds 10 passes against the 13 in the archived multipass03 product,
+% so the product cannot be rebuilt from the archive at all - with any
+% master. Discovered 2026-08-17; see opr_vvel/server/README.md.
 LINES = { ...
-  'EAGER_2022',     7; ...
   'EAGER_2022_GL1', 7; ...
   'EAGER_2022_GL2', 8; ...
   'EAGER_2022_GL3', 6; ...
@@ -98,7 +101,9 @@ end
 %% ========================================================================
 function B = one_build(pn, vdir, mdir, REF_DEPTH, MAX_BASELINE)
 B = [];
-L = load(fullfile(mdir, sprintf('%s_multipass03.mat', pn)), 'pass','param_multipass');
+mp_fn = fullfile(mdir, sprintf('%s_multipass03.mat', pn));
+if ~exist(mp_fn,'file'), return; end     % missing build -> caller SKIPs
+L = load(mp_fn, 'pass','param_multipass');
 Np = numel(L.pass); elev = nan(1,Np); ptime = nan(1,Np);
 for k = 1:Np
   elev(k)  = mean(L.pass(k).elev,'omitnan');
