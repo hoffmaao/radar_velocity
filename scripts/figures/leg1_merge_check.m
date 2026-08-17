@@ -59,42 +59,70 @@ for c = 1:size(cases,1)
 end
 
 %% The acceptance metric: do the two 13-pass builds give the same admittance?
+% Blocks are matched by along-track position, not by array index: the two
+% builds need not start in the same place or hold the same block count
+% (same convention as strain_rates.m's same_leg_floor).
 adm_compare('EAGER_2022 vs GL1-minus-20221209_01 (same 13 passes)', R{1}, R{2});
 adm_compare('EAGER_2022 vs GL1 with all 14 passes', R{1}, R{3});
 
 %% The historical plain-r comparison, kept for continuity
-a = R{1}.r; b = R{2}.r;
+[i1, i2] = match_blocks(R{1}, R{2});
+a = R{1}.r(i1); b = R{2}.r(i2);
 ok = isfinite(a) & isfinite(b);
 fprintf('\nPlain r (NOT reference-invariant, see header) over %d common blocks:\n', nnz(ok));
 fprintf('  EAGER_2022 vs GL1 minus one: max |dr| = %.3f, rms = %.3f, profile corr = %.3f\n', ...
   max(abs(a(ok)-b(ok))), sqrt(mean((a(ok)-b(ok)).^2)), corr2(a(ok), b(ok)));
-c14 = R{3}.r;
-ok2 = isfinite(a) & isfinite(c14);
+[j1, j3] = match_blocks(R{1}, R{3});
+a3 = R{1}.r(j1); c14 = R{3}.r(j3);
+ok2 = isfinite(a3) & isfinite(c14);
 fprintf('  EAGER_2022 vs GL1 all 14:    max |dr| = %.3f, rms = %.3f, profile corr = %.3f\n', ...
-  max(abs(a(ok2)-c14(ok2))), sqrt(mean((a(ok2)-c14(ok2)).^2)), corr2(a(ok2), c14(ok2)));
+  max(abs(a3(ok2)-c14(ok2))), sqrt(mean((a3(ok2)-c14(ok2)).^2)), corr2(a3(ok2), c14(ok2)));
 
+% per-block table, R{1}'s grid; the other builds looked up by position
+m2 = nan(numel(R{1}.adm),1); m2(i1) = i2;
+m3 = nan(numel(R{1}.adm),1); m3(j1) = j3;
 fprintf('\nblock  along[km] %11s %11s %11s %8s %8s %8s\n', ...
   'adm[ue/m]', 'adm[ue/m]', 'adm[ue/m]', 'rp', 'rp', 'rp');
 fprintf('%17s %11s %11s %11s %8s %8s %8s\n', '', 'EAGER', 'GL1-1', 'GL1-14', ...
   'EAGER', 'GL1-1', 'GL1-14');
 for k = 1:numel(R{1}.adm)
+  a2v = NaN; r2v = NaN; a3v = NaN; r3v = NaN;
+  if isfinite(m2(k)), a2v = R{2}.adm(m2(k)); r2v = R{2}.rp(m2(k)); end
+  if isfinite(m3(k)), a3v = R{3}.adm(m3(k)); r3v = R{3}.rp(m3(k)); end
   fprintf('%5d %10.2f %11s %11s %11s %8s %8s %8s\n', k, R{1}.along(k)/1e3, ...
-    numstr(1e6*R{1}.adm(k),'%.1f'), numstr(1e6*R{2}.adm(k),'%.1f'), ...
-    numstr(1e6*R{3}.adm(k),'%.1f'), numstr(R{1}.rp(k),'%.2f'), ...
-    numstr(R{2}.rp(k),'%.2f'), numstr(R{3}.rp(k),'%.2f'));
+    numstr(1e6*R{1}.adm(k),'%.1f'), numstr(1e6*a2v,'%.1f'), ...
+    numstr(1e6*a3v,'%.1f'), numstr(R{1}.rp(k),'%.2f'), ...
+    numstr(r2v,'%.2f'), numstr(r3v,'%.2f'));
+end
+
+%% ========================================================================
+function [ia, ib] = match_blocks(Ra, Rb)
+% Match blocks between two builds by along-track position: blocks closer
+% than TOL are the same piece of ice (strain_rates.m uses the same rule).
+TOL = 100;   % [m]
+ia = []; ib = [];
+for k = 1:numel(Ra.along)
+  [gap, m] = min(abs(Rb.along - Ra.along(k)));
+  if gap <= TOL
+    ia(end+1) = k; ib(end+1) = m; %#ok<AGROW>
+  end
+end
 end
 
 %% ========================================================================
 function adm_compare(label, Ra, Rb)
-ok = isfinite(Ra.adm) & isfinite(Rb.adm);
-d  = Ra.adm(ok) - Rb.adm(ok);
+[ia, ib] = match_blocks(Ra, Rb);
+va = Ra.adm(ia); vb = Rb.adm(ib);
+sa = Ra.adm_std(ia); sb = Rb.adm_std(ib);
+ok = isfinite(va) & isfinite(vb);
+d  = va(ok) - vb(ok);
 % The quadrature sum of the two builds' quoted sigmas, averaged over the
 % common blocks: the scale the rms difference should sit at if the two
 % builds differ only by their noise
-sig = sqrt(mean(Ra.adm_std(ok).^2 + Rb.adm_std(ok).^2));
+sig = sqrt(mean(sa(ok).^2 + sb(ok).^2));
 fprintf('\n%s, %d common blocks:\n', label, nnz(ok));
 fprintf('  admittance: max |diff| = %.1f ue/m, rms = %.1f ue/m (expected from fit sigma: %.1f), profile corr = %.3f\n', ...
-  1e6*max(abs(d)), 1e6*sqrt(mean(d.^2)), 1e6*sig, corr2(Ra.adm(ok), Rb.adm(ok)));
+  1e6*max(abs(d)), 1e6*sqrt(mean(d.^2)), 1e6*sig, corr2(va(ok), vb(ok)));
 end
 
 %% ========================================================================

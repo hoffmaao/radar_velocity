@@ -55,14 +55,17 @@ fprintf('  %d passes, %d blocks; a single-reference pairing would use %d pairs\n
   Np, Nblk, Np-1);
 
 %% Invert
-N = vdef.invertNetwork(P, D, struct('n_sigma', 3, 'weights', W));
+N = vdef.invertNetwork(P, D, struct('n_sigma', 3, 'weights', W, 'n_epoch', Np));
 fprintf('  network: median %d of %d pairs kept, %.1f epochs solved per block\n', ...
   round(median(N.n_used)), size(P,1), mean(N.n_epoch));
 fprintf('  closure (fit residual) rms: median %.3f mm, worst block %.3f mm\n', ...
   1e3*REF_DEPTH*median(N.rms,'omitnan'), 1e3*REF_DEPTH*max(N.rms));
 
-% pairs rejected most often - the network naming its own bad data
-rej = sum(~N.used & isfinite(D), 1);
+% pairs rejected most often - the network naming its own bad data. Only
+% rows the inversion actually solved can reject a pair; unsolved rows
+% leave N.used all-false without meaning rejection.
+solved = any(isfinite(N.x), 2);
+rej = sum(~N.used(solved,:) & isfinite(D(solved,:)), 1);
 [~, ord] = sort(rej,'descend');
 fprintf('  most-rejected pairs:');
 for q = ord(1:min(5,numel(ord)))
@@ -87,17 +90,21 @@ if ~isempty(Pm)
   Am = vdef.fitTideAdmittance(Sm, tday(sec)-min(tday(sec)), tide(sec));
 end
 
+span = max(tday)-min(tday);
+% the single-reference comparison may be absent; [] makes prn print '-'
+adm_m = []; adm_s = []; sec_m = []; sec_s = [];
+if ~isempty(Am)
+  adm_m = 1e3*REF_DEPTH*Am.admittance;
+  adm_s = 1e3*REF_DEPTH*Am.admittance_std;
+  sec_m = 1e3*REF_DEPTH*Am.trend*span;
+  sec_s = 1e3*REF_DEPTH*Am.trend_std*span;
+end
 fprintf('\n%-28s %14s %14s\n','quantity (top 100 m)','network','single ref');
 fprintf('%-28s %14d %14d\n','pairs used', round(median(N.n_used)), size(Pm,1));
-prn('tide response [mm/m]', 1e3*REF_DEPTH*A.admittance, ...
-    ternary(isempty(Am), [], 1e3*REF_DEPTH*Am.admittance));
-prn('  its 1-sigma [mm/m]', 1e3*REF_DEPTH*A.admittance_std, ...
-    ternary(isempty(Am), [], 1e3*REF_DEPTH*Am.admittance_std));
-span = max(tday)-min(tday);
-prn('secular over window [mm]', 1e3*REF_DEPTH*A.trend*span, ...
-    ternary(isempty(Am), [], 1e3*REF_DEPTH*Am.trend*span));
-prn('  its 1-sigma [mm]', 1e3*REF_DEPTH*A.trend_std*span, ...
-    ternary(isempty(Am), [], 1e3*REF_DEPTH*Am.trend_std*span));
+prn('tide response [mm/m]', 1e3*REF_DEPTH*A.admittance, adm_m);
+prn('  its 1-sigma [mm/m]', 1e3*REF_DEPTH*A.admittance_std, adm_s);
+prn('secular over window [mm]', 1e3*REF_DEPTH*A.trend*span, sec_m);
+prn('  its 1-sigma [mm]', 1e3*REF_DEPTH*A.trend_std*span, sec_s);
 
 %% Is the limiting error per-PAIR or per-PASS?
 % This is the question the network can answer and a single reference
@@ -205,10 +212,6 @@ else
   b = b(isfinite(b));
   fprintf('%-28s %14.2f %14.2f\n', lbl, median(a), median(b));
 end
-end
-
-function v = ternary(c,a,b)
-if c, v = a; else, v = b; end
 end
 
 %% ========================================================================

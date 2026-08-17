@@ -31,7 +31,8 @@ root   = '/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground';
 mp_dir = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 REF_DEPTH = 100; MAX_BASELINE = 10;
 EXCESS = 1.4;         % measured between-build excess factor, between_build.m
-SIG_APRES = 3.79;     % mm per m of tide at 100 m, ApRES GA04
+SIG_APRES = -1.24;    % mm per m of tide over the top 100 m, ApRES GA04
+                      % rate method (+/- 0.04), apres_rate_check.py
 
 PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
@@ -77,7 +78,7 @@ for di = 1:size(DIRS,1)
   mu = sum(w.*v(ok))/sum(w); se = sqrt(1/sum(w));
   % scatter-based check on the quoted error
   se_scat = std(v(ok))/sqrt(nnz(ok));
-  fprintf('%-14s: %+6.2f +/- %.2f mm per m of tide (scatter-based %.2f; ApRES %+.2f, %.1f sigma apart)\n', ...
+  fprintf('%-14s: %+6.2f +/- %.2f mm per m of tide (scatter-based %.2f; ApRES rate method %+.2f, %.1f sigma apart)\n', ...
     DIRS{di,2}, mu, se, se_scat, SIG_APRES, abs(mu - SIG_APRES)/max(se,se_scat));
 end
 fprintf(['\nThe pooled value is the project''s best radar estimate of the tidal\n' ...
@@ -118,7 +119,7 @@ end
 if size(P,1) < 10, return; end
 npair = size(P,1); nblk = size(D,1);
 
-N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W));
+N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W,'n_epoch',Np));
 tday = (ptime - min(ptime))/86400;
 tide = elev - mean(elev);
 A = vdef.fitTideAdmittance(N.x, tday, tide);

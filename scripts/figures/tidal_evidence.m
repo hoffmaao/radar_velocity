@@ -34,10 +34,12 @@
 %       before and after. It collapses from -0.84..-0.97 (every product
 %       p < 0.005) to scattered and insignificant.
 %
-%   WHAT SURVIVES is drawn on (b): the ApRES measurement, +3.8 mm per
-%   metre of tide at 100 m from an instrument sitting on the ice. The
-%   tidal strain is real. It is simply ~2x below what this method can
-%   currently resolve, which is the honest conclusion.
+%   WHAT SURVIVES. The tidal strain is real: the ApRES comparison of
+%   record (scripts/diagnostics/apres_rate_check.py, rate method) gives
+%   -1.24 +/- 0.04 mm per metre of tide over the top 100 m, agreeing in
+%   sign and magnitude with the pooled radar network (-1.46 +/- 0.55) and
+%   thin-plate flexure (-1.2). It is simply below what this method can
+%   currently resolve per block, which is the honest conclusion.
 %
 %   Run on the server:
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../tidal_evidence.m')"
@@ -47,8 +49,6 @@ addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
 root     = '/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground';
 mp_dir   = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 out_dir  = '/kucresis/scratch/hoffmana_sta/vvel/figures';
-apres_fn = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
-  'diagnostics', 'apres_GA04_tide_profile.csv');
 
 PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
@@ -75,14 +75,15 @@ V3 = analyse_all(fullfile(root,'CSARP_vvel_v3'), mp_dir, PASS_NAMES, ...
   REF_DEPTH, MAX_BASELINE, BLOCK, ALPHA, c_light);
 assert(~isempty(V2) && ~isempty(V3), 'need both _v2 and _v3 products');
 
+% pair the generations by product NAME: analyse_all silently skips a
+% product whose files are missing, so index-pairing could compare one
+% line's v2 against a different line's v3
+[~, iv2, iv3] = intersect({V2.name}, {V3.name}, 'stable');
+V2 = V2(iv2); V3 = V3(iv3);
+assert(~isempty(V3), 'no product is present in both _v2 and _v3');
+
 % same-leg floor from v3, in mm
 FLOOR_MM = same_leg_floor(V3, 'EAGER_2022', 'EAGER_2022_GL1');
-
-apres_mm = NaN;
-if exist(apres_fn,'file')
-  A = importdata(apres_fn, ',', 1);
-  apres_mm = interp1(A.data(:,1), A.data(:,2), REF_DEPTH, 'linear', NaN);
-end
 
 %% Report
 fprintf('\n%-16s | %-28s | %-28s\n','product','SCALAR coalign (v2)','PER-COLUMN coalign (v3)');
@@ -93,8 +94,8 @@ for i = 1:numel(V3)
     numstr(V2(i).hinge_km,'%.2f'), V2(i).r_art, V2(i).p_art, ...
     numstr(V3(i).hinge_km,'%.2f'), V3(i).r_art, V3(i).p_art);
 end
-fprintf('\nfloor %.1f mm per m of tide; ApRES measured %+.1f mm at %d m\n', ...
-  FLOOR_MM, apres_mm, REF_DEPTH);
+fprintf('\nfloor %.1f mm per m of tide; ApRES (rate method) -1.24 mm at %d m\n', ...
+  FLOOR_MM, REF_DEPTH);
 
 %% Figure
 h = figure('Visible','off','Position',[100 100 1120 940],'Color','w');
@@ -119,15 +120,12 @@ for pnl = 1:2
   set(0,'CurrentFigure',h); hold(ax,'on');
   fill(ax, [0 xmax xmax 0], [-1 -1 1 1]*FLOOR_MM, PAL.band, 'EdgeColor','none');
   plot(ax, [0 xmax], [0 0], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
-  if pnl == 2 && isfinite(apres_mm)
-    plot(ax, [0 xmax], [1 1]*apres_mm, '-', 'Color', PAL.expect, 'LineWidth', 3);
-  end
   hl = [];
   for i = 1:numel(S)
     hl(end+1) = plot(ax, S(i).along/1e3, S(i).adm_mm, '-', ...
-      'Color', PAL.cat(i,:), 'LineWidth', 1.8); %#ok<AGROW>
-    plot(ax, S(i).along/1e3, S(i).adm_mm, PAL.cat_mk{i}, 'MarkerSize', 6, ...
-      'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',0.8);
+      'Color', PAL.cat(S(i).pi,:), 'LineWidth', 1.8); %#ok<AGROW>
+    plot(ax, S(i).along/1e3, S(i).adm_mm, PAL.cat_mk{S(i).pi}, 'MarkerSize', 6, ...
+      'MarkerFaceColor', PAL.cat(S(i).pi,:), 'MarkerEdgeColor','w','LineWidth',0.8);
     if isfinite(S(i).hinge_km)
       plot(ax, S(i).hinge_km, 0, 'p', 'MarkerSize', 15, 'MarkerFaceColor','w', ...
         'MarkerEdgeColor', PAL.ink, 'LineWidth', 1.2);
@@ -143,8 +141,6 @@ for pnl = 1:2
   if pnl == 2
     lg = legend(ax, hl, {S.name}, 'Location','southeast','Interpreter','none');
     set(lg,'TextColor',PAL.ink,'Box','off','FontSize',8);
-    text(ax, 0.98*xmax, apres_mm, 'ApRES measured ', 'Color', PAL.expect, ...
-      'FontSize', 9, 'HorizontalAlignment','right','VerticalAlignment','bottom');
   else
     text(ax, 0.02*xmax, -FLOOR_MM, ' method floor', 'Color', PAL.ink_soft, ...
       'FontSize', 9, 'VerticalAlignment','top');
@@ -156,9 +152,9 @@ ax3 = axes('parent',h,'Position',[0.075 0.085 0.40 0.36]);
 set(0,'CurrentFigure',h); hold(ax3,'on');
 plot(ax3, [0 xmax], [1 1], '--', 'Color', PAL.expect, 'LineWidth', 2);
 for i = 1:numel(V3)
-  plot(ax3, V3(i).along/1e3, V3(i).ax_gps, '-', 'Color', PAL.cat(i,:), 'LineWidth', 1.8);
-  plot(ax3, V3(i).along/1e3, V3(i).ax_gps, PAL.cat_mk{i}, 'MarkerSize', 5, ...
-    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',0.8);
+  plot(ax3, V3(i).along/1e3, V3(i).ax_gps, '-', 'Color', PAL.cat(V3(i).pi,:), 'LineWidth', 1.8);
+  plot(ax3, V3(i).along/1e3, V3(i).ax_gps, PAL.cat_mk{V3(i).pi}, 'MarkerSize', 5, ...
+    'MarkerFaceColor', PAL.cat(V3(i).pi,:), 'MarkerEdgeColor','w','LineWidth',0.8);
 end
 yl = ylim(ax3);
 for i = 1:numel(V2)
@@ -181,11 +177,11 @@ ax4 = axes('parent',h,'Position',[0.555 0.085 0.40 0.36]);
 set(0,'CurrentFigure',h); hold(ax4,'on');
 plot(ax4, [0.5 2.5], [0 0], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
 for i = 1:numel(V3)
-  plot(ax4, [1 2], [V2(i).r_art V3(i).r_art], '-', 'Color', PAL.cat(i,:), 'LineWidth', 1.8);
-  plot(ax4, 1, V2(i).r_art, PAL.cat_mk{i}, 'MarkerSize', 9, ...
-    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
-  plot(ax4, 2, V3(i).r_art, PAL.cat_mk{i}, 'MarkerSize', 9, ...
-    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
+  plot(ax4, [1 2], [V2(i).r_art V3(i).r_art], '-', 'Color', PAL.cat(V3(i).pi,:), 'LineWidth', 1.8);
+  plot(ax4, 1, V2(i).r_art, PAL.cat_mk{V3(i).pi}, 'MarkerSize', 9, ...
+    'MarkerFaceColor', PAL.cat(V3(i).pi,:), 'MarkerEdgeColor','w','LineWidth',1);
+  plot(ax4, 2, V3(i).r_art, PAL.cat_mk{V3(i).pi}, 'MarkerSize', 9, ...
+    'MarkerFaceColor', PAL.cat(V3(i).pi,:), 'MarkerEdgeColor','w','LineWidth',1);
 end
 grid(ax4,'on'); set(ax4, axst{:});
 xlim(ax4,[0.6 2.4]); ylim(ax4,[-1.05 1.05]);
@@ -281,7 +277,9 @@ for n = 1:numel(names)
   clear L Zref;
 
   hinge_km = change_point(rp, along);
-  S = struct('name',pn,'along',along,'adm_mm',adm_mm,'rp',rp,'g',g, ...
+  % pi is the PASS_NAMES index, so palette colour/marker stay tied to the
+  % product identity even when an earlier product was skipped
+  S = struct('name',pn,'pi',n,'along',along,'adm_mm',adm_mm,'rp',rp,'g',g, ...
     'r_art',r_art,'p_art',p_art,'ax_gps',ax_gps,'hinge_km',hinge_km);
   if isempty(R), R = S; else, R(end+1) = S; end %#ok<AGROW>
 end

@@ -35,6 +35,12 @@ product's 13), so stage 1 cannot include it and `run_multipass_scratch.m`
 refuses it with that explanation. Its DERIVED products still rebuild from
 the archived multipass03 file.
 
+`scripts/figures/tidal_evidence.m` is NOT part of the reproduction
+pipeline. It is the historical retraction figure and requires the
+preserved legacy `CSARP_vvel_v2` products (the retired scalar-coalignment
+generation), which the current per-column code cannot and should not
+rebuild. Run it manually when those products are present.
+
 ## The chain
 
 ```

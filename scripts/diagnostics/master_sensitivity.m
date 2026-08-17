@@ -136,7 +136,7 @@ for q = 1:numel(f)
 end
 if isempty(P), return; end
 
-N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W));
+N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W,'n_epoch',Np));
 tday = (ptime - min(ptime))/86400;
 tide = elev - mean(elev);
 A = vdef.fitTideAdmittance(N.x, tday, tide);

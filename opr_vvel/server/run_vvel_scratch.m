@@ -168,3 +168,6 @@ end
 fprintf('\nBatch done: %d products clean, %d with failures (%.1f min)\n', ...
   n_ok, n_fail, toc(t0)/60);
 fprintf('Outputs under %s\n', season_root);
+if n_fail > 0
+  error('run_vvel_scratch: %d product(s) failed or completed partially', n_fail);
+end

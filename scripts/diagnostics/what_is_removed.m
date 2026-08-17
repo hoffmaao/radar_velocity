@@ -19,8 +19,13 @@
 % For every pair of the GL3 and GL1 networks, compare the ALONG-TRACK
 % PROFILE of the shift coalignment removed (dtau_bulk_win, measured from
 % the radar data) against the profile PREDICTED from GPS platform heights
-% alone: -alpha*(ref_z_sec(x) - ref_z_ref(x))/(c/2), averaged over the
-% same windows. GPS knows nothing about ice strain. So:
+% alone: -(ref_z_sec(x) - ref_z_ref(x))/(c/2), averaged over the same
+% windows. The fit below leaves the slope FREE, so it absorbs whatever
+% fraction of the erroneous compensation survives calibration; the
+% measured slope is the quantity of record here. (artefact_vs_signal.m
+% instead applies a fixed ALPHA = 1.03 surviving fraction by convention,
+% which is why its predictor carries the factor and this one does not.)
+% GPS knows nothing about ice strain. So:
 %   - the GPS-predicted part of the removed field is platform geometry,
 %     and removing it cannot cost any ice signal;
 %   - only the residual NOT predicted by GPS could possibly contain ice.

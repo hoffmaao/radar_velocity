@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Compare the repeat-pass InSAR tidal response against ApRES at the same site.
+"""RETRACTED - the chained result of this script is an analysis artefact.
+
+The +3.79 mm-per-metre-of-tide profile this script produces is RETRACTED:
+it is opposite in sign to the radar network (-1.46 +/- 0.55), the flexure
+model (-1.2), and the rate-method check, and the cumulative-chaining
+analysis below is the only one of the four that disagrees. The bug has
+not yet been localised. The ApRES comparison of record is
+scripts/diagnostics/apres_rate_check.py (GA04: -1.24 +/- 0.04 mm per
+metre of tide over 100 m). This script is kept ONLY so the artefact stays
+demonstrable for the pending bug hunt; its CSV export has been removed so
+rerunning it cannot feed the retracted profile back into any figure.
 
 WHAT THIS DOES, AND WHY IT IS NOT A CONVERSION. The ApRES processing in
 ~/projects/EAGER_ApRES already fits every pair: `dh(z) = m0 + m1*(z - z_mid)`
@@ -148,17 +158,10 @@ def main():
         print(f"  ApRES 1-sigma / InSAR floor:     {mme[j100]/INSAR_FLOOR_MM_PER_M:.4f}"
               "   (how much finer ApRES resolves it)\n")
 
-        # Export for scripts/figures/strain_rates.m, which draws this as the
-        # reference curve instead of a thin-plate model. A measurement from a
-        # second instrument beats a model with a guessed flexure wavelength.
-        out = os.path.join(os.path.dirname(__file__), f"apres_{site}_tide_profile.csv")
-        with open(out, "w") as f:
-            f.write("depth_m,mm_per_m_tide,mm_per_m_tide_err\n")
-            for j in range(z.size):
-                if not np.isfinite(mm[j]):
-                    continue
-                f.write(f"{z[j]:.3f},{mm[j]:.5f},{mme[j]:.5f}\n")
-        print(f"  wrote {out}")
+        # No CSV export: the chained profile is RETRACTED (see the banner at
+        # the top) and must not re-enter the figure pipeline.
+        print("  RETRACTED: this chained profile is an analysis artefact; "
+              "the comparison of record is apres_rate_check.py")
 
 
 if __name__ == "__main__":

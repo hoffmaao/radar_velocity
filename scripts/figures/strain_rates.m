@@ -21,9 +21,10 @@
 %
 %   WHAT IS PLOTTED
 %     (a) tidal response against depth: mm the column changes thickness for
-%         each metre the shelf rises on the tide, against BOTH the flexure
-%         model and the ApRES measurement - which disagree in sign
-%     (b) the same at one depth, along the line
+%         each metre the shelf rises on the tide, against the flexure model
+%     (b) the same at one depth, along the line, against the ApRES
+%         rate-method value (-1.24 +/- 0.04 mm over the top 100 m,
+%         scripts/diagnostics/apres_rate_check.py)
 %     (c) the secular change: mm the column changed over the observation
 %         window itself, with no extrapolation to a year - a 3-day baseline
 %         reported as a yearly rate multiplies both signal and error by
@@ -57,6 +58,8 @@ MAX_BASELINE = 10;
 MIN_PAIRS    = 6;
 FLOOR_A = 'EAGER_2022';      % two builds of the SAME leg: their
 FLOOR_B = 'EAGER_2022_GL1';  % disagreement IS the systematic error
+APRES_MM = -1.24;            % mm per m of tide over the top 100 m, ApRES
+APRES_SE = 0.04;             % GA04 rate method, apres_rate_check.py
 
 % Expected TIDAL signal, from thin-plate flexure. A plate of thickness H
 % bent to curvature kappa = 1/L^2 per metre of tide has surface bending
@@ -109,6 +112,9 @@ res = [];
 for ip = 1:numel(PASS_NAMES)
   R = analyse(PASS_NAMES{ip}, vvel_dir, mp_dir, DEPTHS, MAX_BASELINE, MIN_PAIRS);
   if isempty(R), continue; end
+  % pi is the PASS_NAMES index, so palette colour/marker stay tied to the
+  % product identity even when an earlier product was skipped
+  R.pi = ip;
   if isempty(res), res = R; else, res(end+1) = R; end %#ok<SAGROW>
 end
 assert(~isempty(res), 'no products could be analysed');
@@ -116,27 +122,6 @@ assert(~isempty(res), 'no products could be analysed');
 jz = find(DEPTHS == ALONG_DEPTH, 1);
 assert(~isempty(jz), 'ALONG_DEPTH %g is not one of DEPTHS', ALONG_DEPTH);
 span_days = median([res.span]);
-
-%% ApRES measurement, if it has been exported
-% scripts/diagnostics/apres_comparison.py fits the ApRES displacement
-% profiles with THIS project's estimator (dh = a + b*t + c*tide) and writes
-% the resulting profile out. A measurement from a second instrument at the
-% same site beats a thin-plate model whose flexure wavelength was guessed,
-% so it is drawn in preference when present. The model is kept as a second
-% dashed line: the two disagree in sign and by a factor of three, and
-% hiding that would be dishonest about how well the physics is pinned down.
-apres_fn = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
-  'diagnostics', 'apres_GA04_tide_profile.csv');
-apres_z = []; apres_mm = [];
-if exist(apres_fn,'file')
-  A = importdata(apres_fn, ',', 1);
-  apres_z  = A.data(:,1);
-  apres_mm = A.data(:,2);
-  fprintf('ApRES reference: %d depths, %.1f-%.1f m, %.2f to %.2f mm per m of tide\n', ...
-    numel(apres_z), min(apres_z), max(apres_z), min(apres_mm), max(apres_mm));
-else
-  fprintf('No ApRES profile at %s - drawing the model only.\n', apres_fn);
-end
 
 %% Expected curves, in mm of column thickness change
 kappa   = 1/L_FLEX^2;
@@ -184,35 +169,23 @@ set(0,'CurrentFigure',h); hold(ax1,'on');
 band_x(ax1, FL_TIDE_MM, DEPTHS, PAL.band);
 plot(ax1, [0 0], [0 max(DEPTHS)], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
 hexp = plot(ax1, exp_tide_mm, DEPTHS, '--', 'Color', PAL.expect, 'LineWidth', 2);
-hap = [];
-if ~isempty(apres_z)
-  hap = plot(ax1, apres_mm, apres_z, '-', 'Color', PAL.expect, 'LineWidth', 3);
-end
 hleg = []; lbl = {}; allv = [];
 for i = 1:numel(res)
   prof = nanmean_cols(res(i).tide_mm);
   allv = [allv prof]; %#ok<AGROW>
-  hleg(end+1) = plot(ax1, prof, DEPTHS, '-', 'Color', PAL.cat(i,:), 'LineWidth', 2); %#ok<AGROW>
-  plot(ax1, prof, DEPTHS, PAL.cat_mk{i}, 'MarkerSize', 7, ...
-    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
+  hleg(end+1) = plot(ax1, prof, DEPTHS, '-', 'Color', PAL.cat(res(i).pi,:), 'LineWidth', 2); %#ok<AGROW>
+  plot(ax1, prof, DEPTHS, PAL.cat_mk{res(i).pi}, 'MarkerSize', 7, ...
+    'MarkerFaceColor', PAL.cat(res(i).pi,:), 'MarkerEdgeColor','w','LineWidth',1);
   lbl{end+1} = res(i).name; %#ok<AGROW>
 end
 grid(ax1,'on'); set(ax1, axstyle{:}); set(ax1,'YDir','reverse');
-ylim(ax1,[0 max(DEPTHS)]); set_sym_xlim(ax1, [allv FL_TIDE_MM apres_mm(:).']);
+ylim(ax1,[0 max(DEPTHS)]); set_sym_xlim(ax1, [allv FL_TIDE_MM]);
 xlabel(ax1,'Column thickness change per metre of tide (mm)','Color',PAL.ink);
 ylabel(ax1,'Depth below surface (m)','Color',PAL.ink);
-% Sign-neutral wording deliberately: the flexure model predicts thinning and
-% the ApRES measurement shows thickening, so a title asserting either one
-% would prejudge the very disagreement this panel exists to show.
 title(ax1,'Tidal response: column thickness change when the shelf rises 1 m', ...
   'Color',PAL.ink);
-if isempty(hap)
-  lg = legend(ax1, [hleg hexp], [lbl {'flexure model'}], ...
-    'Location','eastoutside','Interpreter','none');
-else
-  lg = legend(ax1, [hleg hexp hap], [lbl {'flexure model','ApRES measured'}], ...
-    'Location','eastoutside','Interpreter','none');
-end
+lg = legend(ax1, [hleg hexp], [lbl {'flexure model'}], ...
+  'Location','eastoutside','Interpreter','none');
 set(lg,'TextColor',PAL.ink,'Box','off');
 
 % (b) tidal squeeze along track
@@ -223,28 +196,19 @@ for i = 1:numel(res), xmax = max(xmax, max(res(i).along)/1e3); end
 fill(ax2, [0 xmax xmax 0], [-1 -1 1 1]*FL_TIDE_MM(jz), PAL.band, 'EdgeColor','none');
 plot(ax2, [0 xmax], [0 0], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
 plot(ax2, [0 xmax], [1 1]*exp_tide_mm(jz), '--', 'Color', PAL.expect, 'LineWidth', 2);
-apres_at_depth = NaN;
-if ~isempty(apres_z)
-  apres_at_depth = interp1(apres_z, apres_mm, ALONG_DEPTH, 'linear', NaN);
-  plot(ax2, [0 xmax], [1 1]*apres_at_depth, '-', 'Color', PAL.expect, 'LineWidth', 3);
-end
+plot(ax2, [0 xmax], [1 1]*APRES_MM, '-', 'Color', PAL.expect, 'LineWidth', 3);
 for i = 1:numel(res)
   v = res(i).tide_mm(:,jz); s = res(i).tide_mm_std(:,jz); x = res(i).along/1e3;
   ok = isfinite(v);
-  draw_errbars(ax2, x(ok), v(ok), s(ok), PAL.cat(i,:));
-  plot(ax2, x(ok), v(ok), PAL.cat_mk{i}, 'MarkerSize', 7, ...
-    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
+  draw_errbars(ax2, x(ok), v(ok), s(ok), PAL.cat(res(i).pi,:));
+  plot(ax2, x(ok), v(ok), PAL.cat_mk{res(i).pi}, 'MarkerSize', 7, ...
+    'MarkerFaceColor', PAL.cat(res(i).pi,:), 'MarkerEdgeColor','w','LineWidth',1);
 end
 grid(ax2,'on'); set(ax2, axstyle{:}); xlim(ax2,[0 xmax]);
 xlabel(ax2,'Along track (km)','Color',PAL.ink);
 ylabel(ax2, sprintf('Change per metre of tide, top %.0f m (mm)', ALONG_DEPTH),'Color',PAL.ink);
-if isfinite(apres_at_depth)
-  title(ax2, sprintf('Floor %.1f mm (shaded); ApRES measured %+.1f mm (solid), flexure model %+.1f mm (dashed)', ...
-    FL_TIDE_MM(jz), apres_at_depth, exp_tide_mm(jz)), 'Color', PAL.ink);
-else
-  title(ax2, sprintf('Along the line: floor is %.1f mm (shaded), model signal %.1f mm (dashed)', ...
-    FL_TIDE_MM(jz), abs(exp_tide_mm(jz))), 'Color', PAL.ink);
-end
+title(ax2, sprintf('Floor %.1f mm (shaded); ApRES (rate method) %+.2f mm (solid), flexure model %+.1f mm (dashed)', ...
+  FL_TIDE_MM(jz), APRES_MM, exp_tide_mm(jz)), 'Color', PAL.ink);
 label_band(ax2, xmax, FL_TIDE_MM(jz), PAL.ink_soft);
 
 % (c) secular change over the observation window
@@ -256,9 +220,9 @@ plot(ax3, [0 xmax], [1 1]*exp_sec_mm(jz), '--', 'Color', PAL.expect, 'LineWidth'
 for i = 1:numel(res)
   v = res(i).sec_mm(:,jz); s = res(i).sec_mm_std(:,jz); x = res(i).along/1e3;
   ok = isfinite(v);
-  draw_errbars(ax3, x(ok), v(ok), s(ok), PAL.cat(i,:));
-  plot(ax3, x(ok), v(ok), PAL.cat_mk{i}, 'MarkerSize', 7, ...
-    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w','LineWidth',1);
+  draw_errbars(ax3, x(ok), v(ok), s(ok), PAL.cat(res(i).pi,:));
+  plot(ax3, x(ok), v(ok), PAL.cat_mk{res(i).pi}, 'MarkerSize', 7, ...
+    'MarkerFaceColor', PAL.cat(res(i).pi,:), 'MarkerEdgeColor','w','LineWidth',1);
 end
 grid(ax3,'on'); set(ax3, axstyle{:}); xlim(ax3,[0 xmax]);
 xlabel(ax3,'Along track (km)','Color',PAL.ink);
@@ -388,7 +352,7 @@ if size(P,1) < MIN_PAIRS
   return;
 end
 
-N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W));
+N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W,'n_epoch',Np));
 tday = (ptime - min(ptime))/86400;
 tide = elev - mean(elev);
 span = max(tday) - min(tday);

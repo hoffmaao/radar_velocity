@@ -44,7 +44,9 @@ PASS_NAME = 'EAGER_2022_GL3';
 REF_DEPTH = 100; MAX_BASELINE = 10;
 
 % Measured elsewhere in the project, cited so the bars are traceable
-SIG_APRES   = 3.79;   % mm per m of tide at 100 m, ApRES GA04
+SIG_APRES   = 1.24;   % mm per m of tide over the top 100 m (magnitude of
+                      % -1.24 +/- 0.04), ApRES GA04 rate method,
+                      % apres_rate_check.py
 FLOOR_BUILD = 8.28;   % mm, EAGER_2022 vs GL1 same-leg disagreement
 % DECOMPOSED 2026-08-17 (diagnostics/between_build.m, master_sensitivity.m):
 % the between-build disagreement quoted against what the two builds' own
@@ -91,7 +93,7 @@ for q = 1:numel(f)
   P(end+1,:) = [str2double(tok{1}), str2double(tok{2})]; %#ok<AGROW>
   W(end+1) = max(mean(o.coh_blk(:),'omitnan'),1e-3); %#ok<AGROW>
 end
-N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W));
+N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W,'n_epoch',Np));
 
 tday = (ptime - min(ptime))/86400;
 tide = elev - mean(elev);
@@ -130,7 +132,7 @@ fprintf('  model form (tidal phase lag)  %6.2f   (5%% of scatter)\n', model_mm);
 fprintf('  unexplained, per block/epoch  %6.2f\n', unexpl_mm);
 fprintf('  --- within-product total      %6.2f\n', tot_res);
 fprintf('  between-build (same leg)      %6.2f\n', FLOOR_BUILD);
-fprintf('  ApRES signal                  %6.2f\n', SIG_APRES);
+fprintf('  ApRES signal (rate method)    %6.2f\n', SIG_APRES);
 
 %% Figure
 h = figure('Visible','off','Position',[100 100 1120 880],'Color','w');
@@ -151,7 +153,7 @@ for k = 1:numel(val)
 end
 plot(ax1, [SIG_APRES SIG_APRES], [0.4 numel(val)+0.6], '--', ...
   'Color', PAL.ink, 'LineWidth', 2);
-text(ax1, SIG_APRES, numel(val)+0.55, ' ApRES signal', 'Color', PAL.ink, ...
+text(ax1, SIG_APRES, numel(val)+0.55, ' ApRES (rate method)', 'Color', PAL.ink, ...
   'FontSize', 9, 'VerticalAlignment','top');
 set(ax1,'YTick',1:numel(val),'YTickLabel',lbl,'YDir','reverse');
 grid(ax1,'on'); set(ax1, axst{:}); ylim(ax1,[0.4 numel(val)+0.6]);
@@ -161,7 +163,10 @@ title(ax1,'(a) Everything that has been measured (green = eliminated)','Color',P
 % (b) closure per pair
 ax2 = axes('parent',h,'Position',[0.60 0.585 0.355 0.345]);
 set(0,'CurrentFigure',h); hold(ax2,'on');
-rej = sum(~N.used & isfinite(D),1);
+% only rows the inversion actually solved can reject a pair; unsolved rows
+% leave N.used all-false without meaning rejection
+solved = any(isfinite(N.x),2);
+rej = sum(~N.used(solved,:) & isfinite(D(solved,:)),1);
 cr  = mm(sqrt(mean(N.resid.^2,1,'omitnan')));
 kept = rej == 0;
 plot(ax2, find(kept), cr(kept), 'o', 'MarkerSize', 6, ...
@@ -208,7 +213,7 @@ plot(ax4, N_ALLLEGS, pr50, 'p', 'MarkerSize', 16, ...
 text(ax4, max(nep), FLOOR_BUILD, 'between-build disagreement ', ...
   'Color', PAL.cat(2,:), 'FontSize', 9, 'HorizontalAlignment','right', ...
   'VerticalAlignment','bottom');
-text(ax4, max(nep), SIG_APRES, 'ApRES signal ', 'Color', PAL.ink, ...
+text(ax4, max(nep), SIG_APRES, 'ApRES (rate method) ', 'Color', PAL.ink, ...
   'FontSize', 9, 'HorizontalAlignment','right','VerticalAlignment','bottom');
 text(ax4, size(N.x,2), fit_mm, sprintf('  formal, now (%d passes)', size(N.x,2)), ...
   'Color', PAL.ink, 'FontSize', 9, 'VerticalAlignment','top');

@@ -68,9 +68,17 @@ def main():
                 continue
             xs.append(tr); ys.append(vsr / 365.25)
         n = len(xs)
+        if n < 3:
+            print(f'{site}: only {n} usable sample(s) after filtering - cannot fit. '
+                  'Check that pair_results.csv has vsr_per_year_medfilt and that '
+                  'cats2008_apres_window.csv covers the record.')
+            continue
         mx = sum(xs)/n; my = sum(ys)/n
         sxx = sum((x-mx)**2 for x in xs)
         sxy = sum((x-mx)*(y-my) for x, y in zip(xs, ys))
+        if sxx == 0:
+            print(f'{site}: tide rate is constant over the {n} samples - cannot fit.')
+            continue
         A = sxy / sxx
         resid = [(y-my) - A*(x-mx) for x, y in zip(xs, ys)]
         se = math.sqrt(sum(q*q for q in resid) / (n-2) / sxx)

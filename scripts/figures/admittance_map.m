@@ -50,6 +50,9 @@ for n = 1:numel(PASS_NAMES)
   S = one_line(PASS_NAMES{n}, net_dir, mp_dir, REF_DEPTH, MAX_BASELINE, BLOCK);
   if isempty(S), continue; end
   S.calib = CALIB(n);
+  % pi is the PASS_NAMES index, so palette colour/marker stay tied to the
+  % product identity even when an earlier product was skipped
+  S.pi = n;
   if isempty(R), R = S; else, R(end+1) = S; end %#ok<AGROW>
   fprintf('%-16s %2d blocks, adm %.2f..%.2f mm/m\n', S.name, numel(S.adm), ...
     min(S.adm), max(S.adm));
@@ -107,7 +110,7 @@ for i = 1:numel(R)
   for b = 1:numel(R(i).adm)
     if ~isfinite(R(i).adm(b)), continue; end
     ci = max(1, min(ndiv, round((R(i).adm(b)+CLIM)/(2*CLIM)*(ndiv-1))+1));
-    mk = PAL.cat_mk{i};
+    mk = PAL.cat_mk{R(i).pi};
     ec = PAL.ink_soft; if ~R(i).calib, ec = [0.75 0.75 0.75]; end
     plot(axm, xk(b), yk(b), mk, 'MarkerSize', 10, ...
       'MarkerFaceColor', dmap(ci,:), 'MarkerEdgeColor', ec, 'LineWidth', 0.6);
@@ -137,8 +140,8 @@ plot(axp, [0 xmax], [0 0], '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
 hl = []; lb = {};
 for i = 1:numel(R)
   if ~R(i).calib, continue; end
-  hh = plot(axp, R(i).along/1e3, R(i).adm, PAL.cat_mk{i}, 'MarkerSize', 5, ...
-    'MarkerFaceColor', PAL.cat(i,:), 'MarkerEdgeColor','w', 'LineWidth', 0.6);
+  hh = plot(axp, R(i).along/1e3, R(i).adm, PAL.cat_mk{R(i).pi}, 'MarkerSize', 5, ...
+    'MarkerFaceColor', PAL.cat(R(i).pi,:), 'MarkerEdgeColor','w', 'LineWidth', 0.6);
   hl(end+1) = hh; lb{end+1} = strrep(R(i).name,'EAGER_2022_',''); %#ok<AGROW>
 end
 % inverse-variance stack in 500 m bins across the calibrated lines
@@ -218,7 +221,7 @@ for q = 1:numel(f)
 end
 if size(P,1) < 10, return; end
 
-N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W));
+N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W,'n_epoch',Np));
 tday = (ptime - min(ptime))/86400; tide = elev - mean(elev);
 A = vdef.fitTideAdmittance(N.x, tday, tide);
 

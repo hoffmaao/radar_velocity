@@ -20,7 +20,10 @@
 #                  master-override all-pairs -> CSARP_vvel_netm (GL1-4)
 #   4 diagnostics closure, artefact tracking, between-build, master
 #                sensitivity, line means
-#   5 figures    strain_rates (network), error_budget, tidal_evidence
+#   5 figures    strain_rates (network), error_budget
+#                (tidal_evidence is NOT run here: it needs the preserved
+#                legacy CSARP_vvel_v2 products, which this pipeline cannot
+#                rebuild - see the server README)
 #
 # Idempotent: existing outputs are skipped (vvel via rerun_only, multipass
 # via its own exists-check), so a rerun after an interruption resumes.
@@ -45,8 +48,18 @@ note() { echo "$(date -u +%H:%M:%SZ) $*" | tee -a "$SUMMARY"; }
 fail=0
 
 # ---- stage 0: environment ------------------------------------------------
+if [[ ! -r "$PIN" ]]; then
+  note "env FAIL: environment pin missing or unreadable: $PIN"
+  touch "$LOG/reproduce_all_done"; exit 1
+fi
 # shellcheck disable=SC1090
 source "$PIN"
+for v in OPR_TOOLBOX_DIR OPR_TOOLBOX_SHA MATLAB_BIN MATLAB_VERSION; do
+  if [[ -z "${!v:-}" ]]; then
+    note "env FAIL: $PIN did not define $v"
+    touch "$LOG/reproduce_all_done"; exit 1
+  fi
+done
 note "code version: $(cat "$CODE/code_version.txt" 2>/dev/null || echo 'UNSTAMPED - deploy with deploy.sh')"
 sha=$(cd "$OPR_TOOLBOX_DIR" && git rev-parse HEAD)
 dirty=$(cd "$OPR_TOOLBOX_DIR" && git status --porcelain | head -1)
@@ -75,7 +88,7 @@ done
 # master-override builds for the sensitivity diagnostic
 for spec in "EAGER_2022_GL1:7" "EAGER_2022_GL2:8" "EAGER_2022_GL3:6" "EAGER_2022_GL4:7"; do
   p="${spec%%:*}"; m="${spec##*:}"
-  $M -batch "product='$p'; master_override=$m; run('$RUN_MP')" \
+  $M -batch "product='$p'; master_override=$m; force_rerun=$([ "$FORCE" = 1 ] && echo true || echo false); run('$RUN_MP')" \
     > "$LOG/repro_mp_${p}_m0${m}.log" 2>&1 \
     && note "multipass $p m0$m OK" || { note "multipass $p m0$m FAIL"; fail=1; }
 done
@@ -105,7 +118,7 @@ vv netm  "{'EAGER_2022_GL1_m07','all','vvel';'EAGER_2022_GL2_m08','all','vvel';'
 # ---- stages 4+5: diagnostics and figures --------------------------------
 for s in diagnostics/closure diagnostics/artefact_vs_signal diagnostics/between_build \
          diagnostics/master_sensitivity diagnostics/line_means \
-         figures/strain_rates figures/error_budget figures/tidal_evidence; do
+         figures/strain_rates figures/error_budget; do
   n=$(basename "$s")
   $M -batch "run('$CODE/scripts/$s.m')" > "$LOG/repro_$n.log" 2>&1 \
     && note "$n OK" || { note "$n FAIL"; fail=1; }

@@ -53,29 +53,38 @@ else
   fprintf('data: BIT-IDENTICAL, size [%s]\n', num2str(size(S.data)));
 end
 
-% pass struct: new fields allowed, common fields must match (geo to tol)
-fa = fieldnames(A.pass); fs = fieldnames(S.pass);
-newf = setdiff(fs, fa); missf = setdiff(fa, fs);
-if ~isempty(newf),  fprintf('pass fields only in rerun (allowed): %s\n', strjoin(newf.',', ')); end
-if ~isempty(missf), fprintf('FAIL: pass fields LOST in rerun: %s\n', strjoin(missf.',', ')); fail = true; end
-bad = {};
-for c = intersect(fa, fs).'
-  fn = c{1};
-  for k = 1:numel(A.pass)
-    x = A.pass(k).(fn); y = S.pass(k).(fn);
-    if isequaln(x, y), continue; end
-    if any(strcmp(fn, {'proj_x','proj_y'})) && isnumeric(x) && isequal(size(x),size(y)) ...
-        && max(abs(x(:)-y(:))) < GEO_TOL
-      continue;
-    end
-    bad{end+1} = sprintf('%s(pass %d)', fn, k); %#ok<AGROW>
-    break;
-  end
-end
-if isempty(bad)
-  fprintf('pass: common fields match (geo fields to %.0e m)\n', GEO_TOL);
+% pass struct: same count required, new fields allowed, common fields must
+% match (geo to tol). A rerun with a different pass count is the clearest
+% possible non-reproduction (the EAGER_2022 10-vs-13 pathology), so it has
+% to produce the clean verdict rather than an index error.
+if numel(A.pass) ~= numel(S.pass)
+  fprintf('FAIL: pass count differs: archive %d, rerun %d\n', ...
+    numel(A.pass), numel(S.pass));
+  fail = true;
 else
-  fprintf('FAIL: pass fields differ: %s\n', strjoin(bad,', ')); fail = true;
+  fa = fieldnames(A.pass); fs = fieldnames(S.pass);
+  newf = setdiff(fs, fa); missf = setdiff(fa, fs);
+  if ~isempty(newf),  fprintf('pass fields only in rerun (allowed): %s\n', strjoin(newf.',', ')); end
+  if ~isempty(missf), fprintf('FAIL: pass fields LOST in rerun: %s\n', strjoin(missf.',', ')); fail = true; end
+  bad = {};
+  for c = intersect(fa, fs).'
+    fn = c{1};
+    for k = 1:numel(A.pass)
+      x = A.pass(k).(fn); y = S.pass(k).(fn);
+      if isequaln(x, y), continue; end
+      if any(strcmp(fn, {'proj_x','proj_y'})) && isnumeric(x) && isequal(size(x),size(y)) ...
+          && max(abs(x(:)-y(:))) < GEO_TOL
+        continue;
+      end
+      bad{end+1} = sprintf('%s(pass %d)', fn, k); %#ok<AGROW>
+      break;
+    end
+  end
+  if isempty(bad)
+    fprintf('pass: common fields match (geo fields to %.0e m)\n', GEO_TOL);
+  else
+    fprintf('FAIL: pass fields differ: %s\n', strjoin(bad,', ')); fail = true;
+  end
 end
 
 if fail

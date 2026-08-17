@@ -140,7 +140,10 @@ remove a line MEAN. What survives is proportional to `(a(x) - 1)`, where
 is 1. That residual changes sign exactly where `a(x) = 1` - a position
 set by the arbitrary normalisation of the survey, not by the ice.
 Measured: `a(x)` crosses 1 at 2.5-3.0 km in every product, and the
-apparent hinge sat within 0.5 km of that crossing every time. Real
+apparent hinge sat within ~0.5 km of that crossing in four of the five
+products; the exception is `EAGER_2022` at 1.50 km, which is also the
+only wholly uncalibrated product, so its residual is the largest and
+least well described by the simple `(a(x) - 1)` form. Real
 flexure predicts something different - bending strain follows the
 CURVATURE of the deflection, so it changes sign at an inflection of
 `a(x)`, and `a(x)` is concave-down at every point in the surveyed window.
@@ -168,34 +171,41 @@ product's line mean sits INSIDE that floor for both quantities, at every
 depth. The floor scales as 1/z, from 148 µε/m and 4.3e-2 /yr at 50 m to
 29 µε/m and 8.8e-3 /yr at 250 m.
 
-**Measured independently by ApRES (2026-08-06).** Phase-sensitive radar was
-deployed at Windless Bight in the same weeks (`~/projects/EAGER_ApRES`,
-site GA04, 277 chained pairs over 5.8 days). Its per-pair displacement
-profiles were fitted with THIS project's estimator - `dh = a + b*t +
-c*tide`, the same model as `vdef.fitTideAdmittance` - so the two
-instruments are compared with one estimator rather than through assumed
-conversions. Reproduced by `scripts/diagnostics/apres_comparison.py`.
+**Measured independently by ApRES (2026-08-06; corrected 2026-08-17).**
+Phase-sensitive radar was deployed at Windless Bight in the same weeks
+(`~/projects/EAGER_ApRES`, site GA04, 277 half-hour pairs over 5.8 days).
 
-Result at 100 m: **+3.79 +/- 0.10 mm per metre of tide**, rising from
-+1.1 mm at 25 m to about +4.9 mm at 145 m. Three things follow, and two of
-them corrected earlier claims in this README:
+The first comparison (`scripts/diagnostics/apres_comparison.py`) chained
+the per-pair displacement profiles end to end and fitted the cumulative
+series with this project's estimator. It gave +3.79 mm per metre of tide
+at 100 m. **That number is RETRACTED as an analysis artefact**: it is
+opposite in sign to the radar network, the flexure model and the
+rate-method check below, and the cumulative-chaining analysis is the only
+one of the four that disagrees. The bug has not yet been localised -
+candidates are sign handling in the chain, cumulative drift correlated
+with the tide, and the shallow grid points the vsr fit excludes - so the
+chained script is kept, marked RETRACTED and with its CSV export removed,
+for the pending bug hunt.
 
-- **The thin-plate flexure model on the figure was wrong** - it predicted
-  -1.2 mm, opposite in sign and three times too small. The measured
-  profile is now drawn on `scripts/figures/strain_rates.m` alongside it,
-  because a measurement from a second instrument beats a model whose
-  flexure wavelength was guessed and whose curvature goes as 1/L^2.
-- **The gap is 2.2x, not 7x.** The 8.3 mm systematic floor is only just
-  above the real signal, so this method is far closer to useful than the
-  model-based estimate suggested.
-- **ApRES resolves it 87x more finely** (1-sigma 0.095 mm against our
-  8.3 mm floor), which is the scale of improvement the InSAR would need.
+The comparison of record is `scripts/diagnostics/apres_rate_check.py`,
+which needs almost no processing of ours: if strain = A*tide then the
+strain RATE of a half-hour pair is A*d(tide)/dt, so regressing the ApRES
+project's own `vsr_per_year_medfilt` against the CATS2008 tide rate gives
+A directly - no chaining, no cumulative drift, no depth-grid handling.
+
+The numbers of record agree in sign and magnitude across three
+independent routes:
+
+- ApRES rate method (GA04): **-1.24 +/- 0.04 mm per metre of tide** over
+  the top 100 m (R2 = 0.75)
+- radar network, pooled over the four calibrated lines:
+  **-1.46 +/- 0.55 mm per metre of tide**
+- thin-plate flexure model: about **-1.2 mm per metre of tide**
 
 Caveats: only GA04 is usable (GA01 and GA05 have bed picks that drift 82
-and 159 m); the ApRES grid starts at 24 m so it says nothing about the top
-24 m; and no ApRES site coordinates exist anywhere, because GPS was off
-for the whole deployment, so "the same site" means the same few-km area
-rather than a known offset.
+and 159 m); and no ApRES site coordinates exist anywhere, because GPS was
+off for the whole deployment, so "the same site" means the same few-km
+area rather than a known offset.
 
 Advection is not the issue: measured from the per-pass GPS, the ice moves
 0.3-1.2 m between passes, against 500 m blocks - so over a 3-day baseline
@@ -280,10 +290,11 @@ reported strain rates and velocities are converted to per-year.
   Looyenga) and the vertical twtt table.
 - `vdef.depthFromTwtt` - twtt below the surface to depth and local `n`.
 - `vdef.coalignPair` - measures the residual bulk fast-time shift between
-  a pair by cross-spectrum group delay in a surface window and removes it,
-  envelope and carrier, before the interferogram. This is the fix for the
-  tide-proportional artefact; see 'Fixed: the tide-proportional artefact'
-  above for the mechanism and the estimator rationale.
+  a pair by normalised cross-correlation of the two slices' trace-averaged
+  power profiles in a surface window and removes it, envelope and carrier,
+  before the interferogram. This is the fix for the tide-proportional
+  artefact; see 'Fixed: the tide-proportional artefact' above for the
+  mechanism and the estimator rationale.
 - `vdef.multilook` - boxcar interferogram and coherence from a coregistered
   SLC pair. Cross product per pixel, averaged after - never the reverse.
 - `vdef.differentialRange` - interferogram phase to `dtau(twtt, x)`,

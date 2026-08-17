@@ -39,6 +39,10 @@ function N = invertNetwork(pairs, d, opts)
 %          .max_iter     reweighting passes (default 4)
 %          .min_pairs    fewest surviving pairs to attempt a row (default 6)
 %          .weights      1 x Npair relative weights (default all ones)
+%          .n_epoch      number of epochs (default max(pairs(:)); pass it
+%                        explicitly when the highest-numbered pass may
+%                        appear in no loaded pair, so N.x keeps one column
+%                        per pass)
 %
 %   Returns
 %     N.x          Nrow x Nepoch solved values, NaN where unreachable
@@ -60,7 +64,13 @@ pairs = round(pairs);
 Npair = size(pairs,1);
 assert(size(pairs,2) == 2, 'pairs must be Npair x 2');
 assert(size(d,2) == Npair, 'd has %d columns for %d pairs', size(d,2), Npair);
-Nep  = max(pairs(:));
+if isfield(opts,'n_epoch') && ~isempty(opts.n_epoch)
+  Nep = opts.n_epoch;
+  assert(Nep >= max(pairs(:)), ...
+    'n_epoch %d is smaller than the largest pass index %d', Nep, max(pairs(:)));
+else
+  Nep = max(pairs(:));
+end
 Nrow = size(d,1);
 
 if isfield(opts,'weights') && ~isempty(opts.weights)
@@ -92,7 +102,7 @@ for r = 1:Nrow
   if nnz(ok) < opts.min_pairs, continue; end
 
   for it = 1:opts.max_iter
-    [x, xs, res, reach] = solve_once(A0, y, ok, w0(:), pairs, Nep);
+    [x, xs, res, reach, ok] = solve_once(A0, y, ok, w0(:), pairs, Nep);
     if isempty(x), break; end
     rr = res(ok);
     s  = 1.4826 * median(abs(rr - median(rr)));
@@ -104,8 +114,8 @@ for r = 1:Nrow
   end
 
   if nnz(ok) < opts.min_pairs, continue; end
-  [x, xs, res, reach] = solve_once(A0, y, ok, w0(:), pairs, Nep);
-  if isempty(x), continue; end
+  [x, xs, res, reach, ok] = solve_once(A0, y, ok, w0(:), pairs, Nep);
+  if isempty(x) || nnz(ok) < opts.min_pairs, continue; end
 
   x(~reach)  = NaN;
   xs(~reach) = NaN;
@@ -121,14 +131,20 @@ end
 end
 
 %% ========================================================================
-function [x, xs, res, reach] = solve_once(A0, y, ok, w, pairs, Nep)
+function [x, xs, res, reach, ok] = solve_once(A0, y, ok, w, pairs, Nep)
 % Weighted least squares with the sum(x) = 0 datum appended as one more
 % equation. Epochs that no surviving pair touches are reported as
 % unreachable rather than being pinned to the datum by the constraint.
+% Pairs outside the largest connected component constrain nothing, so they
+% are dropped from ok as well - otherwise their residuals evaluate against
+% x = 0 and pollute the robust sigma, rms and dof.
 x = []; xs = []; res = nan(size(y)); reach = false(1,Nep);
 
 reach = connected(pairs(ok,:), Nep);
 if ~any(reach), return; end
+in_comp = reach(pairs(:,1)) & reach(pairs(:,2));
+ok = ok & in_comp(:);
+if ~any(ok), return; end
 
 A = A0(ok,:);
 W = sqrt(w(ok));
@@ -149,8 +165,11 @@ x = zeros(Nep,1); x(keep) = xk;
 res_ok = A*x - y(ok);
 res(ok) = res_ok;
 
+% weighted residuals in s2, so the covariance is invariant to the overall
+% scale of the relative weights
+wres = W .* res_ok;
 dof = max(1, nnz(ok) - (nnz(keep) - 1));
-s2  = (res_ok' * res_ok) / dof;
+s2  = (wres' * wres) / dof;
 C   = s2 * pinv(Ak' * Ak);
 xs  = zeros(Nep,1);
 xs(keep) = sqrt(abs(diag(C)));

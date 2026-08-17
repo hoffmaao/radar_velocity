@@ -12,9 +12,14 @@ proj = fileparts(fileparts(mfilename('fullpath')));
 fn = fullfile(proj, 'code_version.txt');
 if exist(fn, 'file')
   fid = fopen(fn, 'r');
-  v = strtrim(fgetl(fid));
+  line = fgetl(fid);
   fclose(fid);
-  return;
+  % an empty or unreadable stamp (fgetl returns -1) falls through to the
+  % git/unknown branches instead of crashing the product write
+  if ischar(line) && ~isempty(strtrim(line))
+    v = strtrim(line);
+    return;
+  end
 end
 [st, out] = system(sprintf( ...
   'cd ''%s'' && git describe --always --dirty --tags 2>/dev/null', proj));
