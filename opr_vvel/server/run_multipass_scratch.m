@@ -37,6 +37,19 @@ end
 product = char(product);  % -batch double quotes build strings, not chars
 if ~exist('force_rerun','var'), force_rerun = false; end
 
+% master_override: rerun with a DIFFERENT main (master) pass, writing under
+% a suffixed product name so the standard build is untouched:
+%   matlab -batch "product='EAGER_2022_GL3'; master_override=6; run('...')"
+% The frozen coregistration_time_shift and equalization vectors are kept.
+% That is deliberate and first-order correct: changing the master shifts
+% ref_z by ONE CONSTANT across all passes (z_masterA - z_masterB), and a
+% fast-time or phase shift common to every pass cancels in any
+% interferometric pair. What does NOT cancel - and what a master-change
+% test therefore measures - is everything downstream that keys off the
+% master itself: the resampling grid, the surface reference, and any
+% master-specific residual.
+if ~exist('master_override','var'), master_override = []; end
+
 scratch_dir = '/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_multipass';
 archive_dir = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 
@@ -44,9 +57,16 @@ if ~exist(scratch_dir,'dir')
   mkdir(scratch_dir);
 end
 
+% Output name: suffixed when the master is overridden, so builds coexist
+if isempty(master_override)
+  product_out = product;
+else
+  product_out = sprintf('%s_m%02d', product, master_override);
+end
+
 % Input: symlink the archived combine_passes output into scratch so the
 % processor reads the same input but writes everything here.
-in_fn = fullfile(scratch_dir, [product '.mat']);
+in_fn = fullfile(scratch_dir, [product_out '.mat']);
 if ~exist(in_fn,'file')
   src_fn = fullfile(archive_dir, [product '.mat']);
   if ~exist(src_fn,'file')
@@ -58,7 +78,7 @@ if ~exist(in_fn,'file')
   end
 end
 
-out_fn = fullfile(scratch_dir, [product '_multipass03.mat']);
+out_fn = fullfile(scratch_dir, [product_out '_multipass03.mat']);
 if exist(out_fn,'file') && ~force_rerun
   fprintf('[SKIP] %s exists; define force_rerun=true to overwrite\n', out_fn);
   return;
@@ -68,7 +88,7 @@ end
 param_override = [];
 param = [];
 
-param.multipass.fn = fullfile(scratch_dir, product);
+param.multipass.fn = fullfile(scratch_dir, product_out);
 param.multipass.rbins = [];
 param.multipass.layer = struct('name',{'surface','bottom'},'source','layerdata','existence_check',false);
 param.multipass.comp_mode = 3;
@@ -116,6 +136,13 @@ switch product
       .* exp(1i*([65.7 52.2 111.8 -20.5 -25.0 -126.3 -34.5 162.0 0.0 -164.0 44.9 -115.2 -49.5 -132.5]/180*pi));
   otherwise
     error('Unknown product: %s', product);
+end
+
+if ~isempty(master_override)
+  fprintf('MASTER OVERRIDE: %d (product default %d)\n', ...
+    master_override, param.multipass.baseline_master_idx);
+  param.multipass.baseline_master_idx = master_override;
+  param.multipass.master_idx = master_override;
 end
 
 %% Run (mirrors the automated section of run_multipass_EAGER.m)
