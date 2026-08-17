@@ -28,11 +28,13 @@ Working and validated:
   and `test/test_vvel_task.m`, which builds a synthetic multipass product
   (with a disabled pass in the middle, to cover the pass-index vs
   data-slice mapping) and recovers S1 to 0.6% and S2 to 3.2% of truth in
-  Octave in ~16 s. See `opr_vvel/README.md`.
+  Octave in ~20 s. See `opr_vvel/README.md`.
 
 Run against the real products: all five EAGER_2022 repeat-pass products,
-both pairings, at two along-track block sizes. Coherence is good (0.95 at
-50 m, 0.8 at 300 m) and the chain completes cleanly.
+in the main, sequential and all-pairs pairings, at two along-track block
+sizes. Coherence is good (0.95 at 50 m, 0.8 at 300 m) and the chain
+completes cleanly. The whole server chain is reproducible from one entry
+point; see `opr_vvel/server/README.md`.
 
 Not yet done:
 
@@ -53,22 +55,64 @@ explicitly is, line 667-669). On grounded ice `ref_z` is platform motion
 and the compensation is right. On the floating shelf the platform and the
 surface ride the tide together, so `ref_z` is essentially the tide and
 the compensation displaces the returns by an amount that never was a
-range change. Measured by cross-spectrum group delay at the surface, the
-residual misalignment between pair slices reaches 7 ns (about two range
-bins) and runs at 1.2-1.3 times `-(ref_z_sec - ref_z_ref)/(c/2)` -
-slightly more than the full erroneous compensation survives to the
-product. (An earlier envelope-correlation diagnostic reported far smaller
-residuals; parabolic peak interpolation on a one-bin speckle correlation
-peak underestimates sub-bin shifts several-fold, which is why the
-estimator in the fix is a group delay, not a peak fit.)
+range change.
+
+**Whether it reaches a given product depends on that product's
+calibration (2026-08-05).** `multipass`'s own
+`param.multipass.coregistration_time_shift` applies a per-pass fast-time
+shift derived from the comp_mode 2 coregistration stage, and it removes
+this misalignment as a side effect. Across the five EAGER products the
+field splits them cleanly in two:
+
+| product | `coregistration_time_shift` | surface offset measured in `data` |
+|---|---|---|
+| `EAGER_2022` | all zeros | full residual, 0.97-1.07 x `-(ref_z_sec - ref_z_ref)/(c/2)` |
+| `EAGER_2022_GL4` | all zeros | full residual |
+| `EAGER_2022_GL1` | nonzero, up to 2 bins | aligned, within +/-0.9 ns of zero |
+| `EAGER_2022_GL2` | nonzero | aligned |
+| `EAGER_2022_GL3` | nonzero | aligned |
+
+So this correction is a **repair for uncoregistered products**, and on a
+properly coregistered one it must measure ~0 and do nothing. That split
+is not geography: it is exactly the split seen in the tidal response,
+where GL1/GL2/GL3 show a hinge and `EAGER_2022`/GL4 do not.
 
 **The fix** is `vdef.coalignPair`, applied per pair in `vvel_task` before
-the interferogram: measure the bulk shift empirically from the data and
-remove it, envelope and carrier. Empirical rather than the deterministic
-inverse because the surviving fraction is not exactly one. Validated on
-synthetics (injected bulk delays of 0.7-2.2 ns recovered to 11 ps or
-better; strain recovery unchanged) and recorded in every product as
-`dtau_bulk` / `dtau_bulk_pred` / `coalign_quality` / `coalign_applied`.
+the interferogram: measure the shift empirically from the data - per
+along-track window, since it varies along track (see the retraction
+below) - and remove it, envelope and carrier. Empirical rather than the
+deterministic inverse because how much survives depends on
+`coregistration_time_shift`, which `ref_z` alone does not reveal.
+Recorded in every product as `dtau_bulk` / `dtau_bulk_pred` /
+`coalign_quality` / `coalign_peak_ratio` / `coalign_applied`, plus - since
+coalignment went per-column - the applied profile and per-window
+diagnostics (`dtau_bulk_profile`, `dtau_bulk_win`, `coalign_x_win`,
+`coalign_quality_win`, `coalign_n_win`, `coalign_n_win_ok`).
+
+**The estimator, replaced 2026-08-05.** It is now the normalised
+cross-correlation of the two slices' trace-averaged POWER profiles in a
+surface window, FFT-upsampled 32x. The previous cross-spectrum group
+delay was validated only on a synthetic that contained no surface return
+at all - depth-decaying white noise, whose trace-averaged profile has no
+bin-scale structure - and on the real products it ran 1.2-1.3x the true
+residual on the uncoregistered products and returned up to 8.5 ns of pure
+noise on the coregistered ones, where the truth is ~0, all at quality
+0.965-1.000. Since coalignment is applied to every pair, that noise was
+corrupting the *correctly* calibrated products. The envelope correlation
+reproduces the truth at ratio 0.97-1.07 on the former and stays within
++/-0.9 ns of zero on the latter. The synthetic now carries a realistic
+band-limited surface return, without which it cannot exercise the
+estimator that runs on real data.
+
+The `coalign_max_lag` bound is load-bearing rather than a formality: the
+trace-averaged surface profile carries a range sidelobe at +/-5.4 bins at
+0.37-0.55 of the main peak, and on one pair (GL1 / 20221211_07) that
+sidelobe outranked the true peak and gave -19 ns against a true 0.8 ns. A
+peak-dominance test does not separate these cases - that pair's
+peak-to-sidelobe ratio was 1.8 while a correctly measured pair sat at
+1.03 - so the bound is physical (3 bins, above the tidal range over c/2
+and well inside the sidelobe), and a peak found on the bound is rejected
+rather than clamped.
 
 **What the leg-1 comparison says now**
 (`scripts/figures/leg1_merge_check.m`): the two builds' tidal-response
@@ -76,17 +120,124 @@ profiles went from uncorrelated (0.125) to correlated in shape (0.807),
 but an offset in absolute r remains. That residual is an ANALYSIS
 limitation, not a processing one: the two builds reference different
 epochs (2022-12-09 vs 2022-12-12), and a plain correlation is invariant
-to the constant strain offset but not to the secular trend, which enters
-with a reference-dependent sign. The reference-invariant quantity is the
-tide admittance from a joint strain = a + b*t + c*tide fit, which is the
-planned next step for both the analysis and the acceptance test.
+to the constant strain offset but not to the secular trend, which
+aliases in through the sample covariance of time with tide - a quantity
+that depends on which pairs a build happens to contain. The
+reference-invariant quantity is the tide admittance of the joint
+strain = a + b*t + c*tide fit, `vdef.fitTideAdmittance`: re-referencing
+shifts strain, t and tide by constants that the intercept absorbs, so
+the trend b and admittance c cannot move. `scripts/test_tide_admittance.m`
+demonstrates the aliasing deterministically (two noiseless builds of the
+same truth differ in plain r by up to 0.23 while their admittances are
+bit-equal) and is the unit test. Both analysis scripts now read the
+admittance and its trend-removed partial correlation; plain r survives
+only in printed tables for continuity.
+
+### RETRACTED: the tidal flexure hinge was the artefact (2026-08-05)
+
+The project's headline result - vertical column strain correlating with
+the tide and reversing sign along track at a flexure hinge - **does not
+survive correct coalignment**. It was the residual misalignment.
+
+**Why a scalar correction manufactured it.** Both
+`coregistration_time_shift` and the first version of `vdef.coalignPair`
+remove a line MEAN. What survives is proportional to `(a(x) - 1)`, where
+`a(x)` is the local surface tidal admittance normalised so the line mean
+is 1. That residual changes sign exactly where `a(x) = 1` - a position
+set by the arbitrary normalisation of the survey, not by the ice.
+Measured: `a(x)` crosses 1 at 2.5-3.0 km in every product, and the
+apparent hinge sat within ~0.5 km of that crossing in four of the five
+products; the exception is `EAGER_2022` at 1.50 km, which is also the
+only wholly uncalibrated product, so its residual is the largest and
+least well described by the simple `(a(x) - 1)` form. Real
+flexure predicts something different - bending strain follows the
+CURVATURE of the deflection, so it changes sign at an inflection of
+`a(x)`, and `a(x)` is concave-down at every point in the surveyed window.
+The data matched the artefact prediction and contradicted the flexure
+one.
+
+**What per-column coalignment did to it.** The correlation between the
+measured admittance and the artefact predictor
+(`scripts/diagnostics/artefact_vs_signal.m`) went from -0.84…-0.97 with
+every product at p < 0.005, to +0.34 / -0.63 / +0.29 / +0.55 / -0.64 with
+none significant. The change-point detector now finds NO hinge in any of
+the five products, where with the scalar correction all five showed one
+at contrast 0.96-1.60. The surviving admittance is -33 to +40 µε/m with
+no along-track structure.
+
+The four products that had "agreed" on the hinge to ~570 m agreed because
+they share a survey geometry and therefore the same `a(x) = 1` crossing -
+not because they each saw the same ice.
+
+**The strain rates themselves** are in
+`scripts/figures/strain_rates.m`, which reports the secular term and the
+tide admittance of the joint fit over a systematic floor measured from
+the two builds of leg 1 rather than assumed from a noise model. Every
+product's line mean sits INSIDE that floor for both quantities, at every
+depth. The floor scales as 1/z, from 148 µε/m and 4.3e-2 /yr at 50 m to
+29 µε/m and 8.8e-3 /yr at 250 m.
+
+**Measured independently by ApRES (2026-08-06; corrected 2026-08-17).**
+Phase-sensitive radar was deployed at Windless Bight in the same weeks
+(`~/projects/EAGER_ApRES`, site GA04, 277 half-hour pairs over 5.8 days).
+
+The first comparison (`scripts/diagnostics/apres_comparison.py`) chained
+the per-pair displacement profiles end to end and fitted the cumulative
+series with this project's estimator. It gave +3.79 mm per metre of tide
+at 100 m. **That number is RETRACTED as an analysis artefact**: it is
+opposite in sign to the radar network, the flexure model and the
+rate-method check below, and the cumulative-chaining analysis is the only
+one of the four that disagrees. The bug has not yet been localised -
+candidates are sign handling in the chain, cumulative drift correlated
+with the tide, and the shallow grid points the vsr fit excludes - so the
+chained script is kept, marked RETRACTED and with its CSV export removed,
+for the pending bug hunt.
+
+The comparison of record is `scripts/diagnostics/apres_rate_check.py`,
+which needs almost no processing of ours: if strain = A*tide then the
+strain RATE of a half-hour pair is A*d(tide)/dt, so regressing the ApRES
+project's own `vsr_per_year_medfilt` against the CATS2008 tide rate gives
+A directly - no chaining, no cumulative drift, no depth-grid handling.
+
+The numbers of record agree in sign and magnitude across three
+independent routes:
+
+- ApRES rate method (GA04): **-1.24 +/- 0.04 mm per metre of tide** over
+  the top 100 m (R2 = 0.75)
+- radar network, pooled over the four calibrated lines:
+  **-1.46 +/- 0.55 mm per metre of tide**
+- thin-plate flexure model: about **-1.2 mm per metre of tide**
+
+Caveats: only GA04 is usable (GA01 and GA05 have bed picks that drift 82
+and 159 m); and no ApRES site coordinates exist anywhere, because GPS was
+off for the whole deployment, so "the same site" means the same few-km
+area rather than a known offset.
+
+Advection is not the issue: measured from the per-pass GPS, the ice moves
+0.3-1.2 m between passes, against 500 m blocks - so over a 3-day baseline
+this Eulerian measurement samples effectively the same column an ApRES
+would follow.
+
+**The evidence, in one figure**: `scripts/figures/tidal_evidence.m` draws
+the whole argument - the apparent hinge under a scalar coalignment, its
+disappearance under per-column, the GPS a(x) profile showing the scalar
+residual must flip sign where a(x) = 1, and the collapse of the
+correlation with the artefact predictor. Note the scale in panel (a): the
+apparent signal reached 40 mm per metre of tide against an 8.3 mm floor,
+which is why it was convincing.
+
+**What does survive**: real tidal flexure IS present, measured from the
+GPS alone with no radar (`scripts/diagnostics/gps_flexure.m`). Regressing
+each pass's along-track `ref_z` on its own line mean gives `a(x)` falling
+monotonically by a factor ~4 along the line; GL3 and GL4 agree to 0.02
+despite different reference passes and pass sets, so it is physical
+rather than a GPS baseline ramp. Grounding is toward the north/northeast
+end. The radar simply does not resolve the column-strain signature of it
+in this dataset.
 
 **Interpretation caveats that remain**: the five products are four legs
 of ONE line (120-145 m apart, walked ~24 min apart), not independent
-lines; and the post-fix hinge position (GL1/GL2 cross from strongly
-positive to negative ~3.3 km along, within ~1 km of the mapped MEaSUREs
-grounding line) should be read from the joint-fit admittance once that
-lands, not from the plain correlation.
+lines, so they were never five independent tests of anything.
 
 ## Target data
 
@@ -144,11 +295,13 @@ reported strain rates and velocities are converted to per-year.
   and pinned at `rho_sfc` / `rho_bco`, plus refractive index (Kovacs or
   Looyenga) and the vertical twtt table.
 - `vdef.depthFromTwtt` - twtt below the surface to depth and local `n`.
-- `vdef.coalignPair` - measures the residual bulk fast-time shift between
-  a pair by cross-spectrum group delay in a surface window and removes it,
-  envelope and carrier, before the interferogram. This is the fix for the
-  tide-proportional artefact; see 'Fixed: the tide-proportional artefact'
-  above for the mechanism and the estimator rationale.
+- `vdef.coalignPair` - measures the residual fast-time misalignment of a
+  pair, per along-track window, by normalised cross-correlation of the two
+  slices' trace-averaged power profiles in a surface window, and removes
+  it per column, envelope and carrier, before the interferogram. This is
+  the fix for the tide-proportional artefact; see 'Fixed: the
+  tide-proportional artefact' above for the mechanism and the estimator
+  rationale, and the retraction section for why it must be per column.
 - `vdef.multilook` - boxcar interferogram and coherence from a coregistered
   SLC pair. Cross product per pixel, averaged after - never the reverse.
 - `vdef.differentialRange` - interferogram phase to `dtau(twtt, x)`,
@@ -169,6 +322,15 @@ reported strain rates and velocities are converted to per-year.
   profile, reporting `c0/c1/c2`, `S1`, `S2`, `epszz_mean` and `p_quad` in
   the same schema as the earlier EGIG 2011-2012 vertical-strain products
   so the two are directly comparable.
+- `vdef.fitTideAdmittance` - the reference-invariant joint fit
+  strain = a + b*t + c*tide per along-track block. The trend `b` and tide
+  admittance `c` cannot depend on the reference-pass choice, unlike a
+  plain correlation with tide; this is the acceptance metric of the tidal
+  analysis. Unit test: `scripts/test_tide_admittance.m`.
+- `vdef.invertNetwork` - per-epoch displacement from every pass pair at
+  once, under a sum(x) = 0 datum (no privileged reference epoch) with
+  robust rejection of inconsistent pairs; the fit residuals are the
+  closure errors. Unit test: `scripts/test_invert_network.m`.
 - `vdef.forwardDisplacement`, `vdef.legendreBasis` - forward model and
   basis.
 
@@ -221,7 +383,9 @@ docker run --rm --platform linux/amd64 -v "$PWD":/work -w /work/scripts \
   gnuoctave/octave:latest octave --no-gui synthetic_vertical_velocity.m
 ```
 
-Figures land in `figs/`. The surface-reference regression test runs the
-same way, with `test_surface_reference.m` in place of the script name; the
-OPR adapter's end-to-end test has its own command in
-`opr_vvel/README.md`.
+Figures land in `figs/`. The surface-reference, tide-admittance and
+network-inversion tests run the same way, with `test_surface_reference.m`,
+`test_tide_admittance.m` or `test_invert_network.m` in place of the script
+name; the OPR adapter's end-to-end test has its own command in
+`opr_vvel/README.md`. CI (`.github/workflows/tests.yml`) runs all five
+entrypoints in Octave on every push.

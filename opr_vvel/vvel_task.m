@@ -178,7 +178,9 @@ s_sec = data(:,:,k_sec);
 % in proportion to the tide and the misalignment leaks into the inferred
 % strain (~57 mm of apparent column displacement per metre of tide when
 % this was left uncorrected). See vdef.coalignPair for the mechanism.
-coalign = struct('dtau_bulk', NaN, 'quality', NaN, 'applied', false);
+coalign = struct('dtau_bulk', NaN, 'dtau_profile', [], 'dtau_win', [], ...
+  'x_win', [], 'quality_win', [], 'quality', NaN, 'peak_ratio', NaN, ...
+  'n_win', 0, 'n_win_ok', 0, 'applied', false);
 % multipass ADVANCES each pass by ref_z/(c/2) (spectrum times
 % exp(+1i*2*pi*f*ref_z/(c/2)), multipass.m:515-522), so if none of that
 % shift were absorbed downstream the secondary would trail the reference
@@ -190,15 +192,25 @@ if param.vvel.coalign_en
   [s_sec, coalign] = vdef.coalignPair(s_ref, s_sec, ...
     struct('Time', Time, 'Surface', Surface, 'fc', fc), param.vvel);
   if coalign.applied
-    fprintf('Coalign: removed %.3f ns bulk shift (predicted from ref_z: %.3f ns; quality %.2f)\n', ...
-      coalign.dtau_bulk*1e9, dtau_bulk_pred*1e9, coalign.quality);
+    fprintf('Coalign: mean %.3f ns, along-track range %.3f ns over %d/%d windows (predicted mean from ref_z: %.3f ns; quality %.2f, sidelobe %.2f)\n', ...
+      coalign.dtau_bulk*1e9, ...
+      (max(coalign.dtau_profile)-min(coalign.dtau_profile))*1e9, ...
+      coalign.n_win_ok, coalign.n_win, dtau_bulk_pred*1e9, ...
+      coalign.quality, coalign.peak_ratio);
   else
     warning('Coalignment failed for pair %s; proceeding on the unaligned pair. The tide-proportional artefact is NOT corrected for this pair.', pair_id);
   end
 end
-dtau_bulk       = coalign.dtau_bulk;
-coalign_quality = coalign.quality;
-coalign_applied = coalign.applied;
+dtau_bulk          = coalign.dtau_bulk;
+dtau_bulk_profile  = coalign.dtau_profile;
+dtau_bulk_win      = coalign.dtau_win;
+coalign_x_win      = coalign.x_win;
+coalign_quality_win = coalign.quality_win;
+coalign_quality    = coalign.quality;
+coalign_peak_ratio = coalign.peak_ratio;
+coalign_n_win      = coalign.n_win;
+coalign_n_win_ok   = coalign.n_win_ok;
+coalign_applied    = coalign.applied;
 
 [igram, coh] = vdef.multilook(s_ref, s_sec, opts.mlook_window);
 clear s_ref s_sec;
@@ -413,6 +425,21 @@ else
 end
 file_type = 'vvel';
 
+% Provenance: enough to answer, from the product alone, "what code built
+% this, from which input, on what". The input is identified by name, size
+% and mtime rather than a content hash - hashing 1.3 GB per pair would
+% dominate the runtime, and verify_multipass_rerun.m already guards the
+% input's content against the archive bit-for-bit.
+code_version = vvel_code_version();
+input_fn = mp.in_fn;
+di = dir(input_fn);
+if isempty(di)
+  input_bytes = NaN; input_mtime = '';
+else
+  input_bytes = di(1).bytes; input_mtime = di(1).date;
+end
+matlab_version = version();
+
 fprintf('Saving output file:\n  %s\n', out_fn);
 opr_save(out_fn,'eps_zz','depth_grid','v_fit','S1','S2','epszz_mean','p_quad', ...
   'coef','coef_std','fit_rms','n_used','n_eff','norm_depth', ...
@@ -421,13 +448,16 @@ opr_save(out_fn,'eps_zz','depth_grid','v_fit','S1','S2','epszz_mean','p_quad', .
   'coh_blk','coverage_blk','block_starts', ...
   'depth_blk','dh_blk','dh_std_blk','v_blk','v_std_blk','n_local', ...
   'densification_applied','phase_sign','max_valid_bin','block_short', ...
-  'dtau_bulk','dtau_bulk_pred','coalign_quality','coalign_applied', ...
+  'dtau_bulk','dtau_bulk_pred','dtau_bulk_profile','dtau_bulk_win', ...
+  'coalign_x_win','coalign_quality_win','coalign_n_win','coalign_n_win_ok', ...
+  'coalign_quality','coalign_peak_ratio','coalign_applied', ...
   'delta_t','delta_t_sec','delta_t_blk','delta_t_spread_sec', ...
   'baseline_y','baseline_z','fc','Time','Surface','GPS_time', ...
   'Latitude','Longitude','Elevation','Along_track', ...
   'pass_idx_ref','pass_idx_sec','baseline_main_idx','surf_flatten_en', ...
   'param_vvel','param_multipass','param_combine_passes', ...
-  'file_type','file_version');
+  'file_type','file_version', ...
+  'code_version','input_fn','input_bytes','input_mtime','matlab_version');
 
 for file_ext = param.vvel.out_file_exts
   file_ext = file_ext{1};

@@ -1,16 +1,18 @@
 %TIDAL_DEFORMATION Vertical column strain against the tide at Windless Bight.
 %
-%   NOTE ON A FIXED ARTEFACT AND A REMAINING LIMITATION. Products produced
-%   before 2026-08-04 carried a tide-proportional artefact from multipass's
+%   NOTE ON A FIXED ARTEFACT AND THE METRIC. Products produced before
+%   2026-08-04 carried a tide-proportional artefact from multipass's
 %   z-motion compensation treating tidal heave as platform motion; it is
 %   corrected upstream by vdef.coalignPair (see 'Fixed: the
-%   tide-proportional artefact' in the project README). What this script
-%   computes is still a PLAIN correlation of strain with tide, which is
-%   not invariant to the choice of reference pass: the secular strain
-%   trend aliases in with a reference-dependent sign, so absolute r values
-%   differ between builds of the same leg. Read shapes and transitions,
-%   not absolute r; the reference-invariant tide admittance (joint
-%   strain = a + b*t + c*tide fit) is the planned replacement.
+%   tide-proportional artefact' in the project README). The response
+%   metric here is the joint strain = a + b*t + c*tide fit
+%   (vdef.fitTideAdmittance): the admittance c and its partial
+%   correlation are invariant to the choice of reference pass, unlike the
+%   PLAIN correlation of strain with tide, into which the secular trend
+%   aliases with a reference-dependent sign (demonstrated in
+%   scripts/test_tide_admittance.m). The plain r is still printed in the
+%   per-line table for continuity, but every plot, and the hinge change
+%   point, reads the trend-removed partial correlation.
 %
 %   Builds the analysis that motivates the whole project, for every EAGER
 %   2022 repeat-pass line: Windless Bight is floating, so if tidal flexure
@@ -54,6 +56,8 @@
 %
 %   Run on the server, where the products live:
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../tidal_deformation.m')"
+
+addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
 
 % VVEL_SUFFIX selects which processing run to read: '' for the standing
 % 500 m blocks, '_fine' for the shorter along-track window. Set it before
@@ -113,13 +117,15 @@ for i = 1:numel(res)
   fprintf('tide range %.3f m\n', R.tide_range);
   fprintf('%-6s %10s %9s %9s', 'block','along[km]','lat','lon');
   for j = 1:numel(REF_DEPTHS)
-    fprintf(' %7s%3.0f %7s%3.0f', 'n@', REF_DEPTHS(j), 'r@', REF_DEPTHS(j));
+    fprintf(' %7s%3.0f %7s%3.0f %6s%3.0f %10s%3.0f', 'n@', REF_DEPTHS(j), ...
+      'r@', REF_DEPTHS(j), 'rp@', REF_DEPTHS(j), 'adm[ue/m]@', REF_DEPTHS(j));
   end
   fprintf('\n');
   for b = 1:R.Nblk
     fprintf('%-6d %10.2f %9.4f %9.4f', b, R.along(b)/1e3, R.lat(b), R.lon(b));
     for j = 1:numel(REF_DEPTHS)
-      fprintf(' %10d %10.2f', R.nobs(b,j), R.r(b,j));
+      fprintf(' %10d %10.2f %9.2f %13.1f', R.nobs(b,j), R.r(b,j), ...
+        R.rp(b,j), 1e6*R.adm(b,j));
     end
     fprintf('\n');
   end
@@ -128,15 +134,15 @@ for i = 1:numel(res)
 end
 
 %% Cross-line summary
-fprintf('\n===== hinge position per line (change point in r at %.0f m) =====\n', ...
+fprintf('\n===== hinge position per line (change point in r_partial at %.0f m) =====\n', ...
   REF_DEPTHS(SUMMARY_DEPTH));
 fprintf('%-18s %10s %9s %9s %9s %8s %8s\n', ...
   'line','along[km]','lat','lon','contrast','r_near','r_far');
 for i = 1:numel(res)
   R = res(i);
   [xc, latc, lonc, contrast] = zero_crossing(R, SUMMARY_DEPTH);
-  near = R.r(1:min(3,R.Nblk), SUMMARY_DEPTH);
-  far  = R.r(max(1,R.Nblk-3):R.Nblk, SUMMARY_DEPTH);
+  near = R.rp(1:min(3,R.Nblk), SUMMARY_DEPTH);
+  far  = R.rp(max(1,R.Nblk-3):R.Nblk, SUMMARY_DEPTH);
   fprintf('%-18s %10s %9s %9s %9s %8.2f %8.2f\n', R.pass_name, ...
     numstr(xc/1e3,'%.2f'), numstr(latc,'%.4f'), numstr(lonc,'%.4f'), ...
     numstr(contrast,'%.2f'), mean(near,'omitnan'), mean(far,'omitnan'));
@@ -222,8 +228,16 @@ tide   = pass_elev(sec_idx) - pass_elev(main_pass);
 t_days = (t_sec - min(t_sec))/86400;
 
 Nblk = size(strain,1);
-r = nan(Nblk,nd); slope = nan(Nblk,nd); nobs = zeros(Nblk,nd);
+r = nan(Nblk,nd); nobs = zeros(Nblk,nd);
+adm = nan(Nblk,nd); adm_std = nan(Nblk,nd); rp = nan(Nblk,nd); trend = nan(Nblk,nd);
 for j = 1:nd
+  % The reference-invariant joint fit drives the plots and the hinge
+  A = vdef.fitTideAdmittance(strain(:,:,j), t_days, tide);
+  adm(:,j)     = A.admittance(:);
+  adm_std(:,j) = A.admittance_std(:);
+  rp(:,j)      = A.r_partial(:);
+  trend(:,j)   = A.trend(:);
+  % The plain correlation is kept only for the printed table (see header)
   for b = 1:Nblk
     s  = strain(b,:,j);
     ok = isfinite(s) & isfinite(tide);
@@ -231,14 +245,13 @@ for j = 1:nd
     if nobs(b,j) < 5, continue; end
     rm = corrcoef(tide(ok), s(ok));
     r(b,j) = rm(1,2);
-    p = polyfit(tide(ok), s(ok), 1);
-    slope(b,j) = p(1);
   end
 end
 
 R = struct('pass_name',pass_name,'main_pass',main_pass,'main_seg',{pass_seg{main_pass}}, ...
   'np_all',np_all,'np_used',numel(t_sec),'Nblk',Nblk,'along',along,'lat',lat,'lon',lon, ...
-  'tide',tide,'t_days',t_days,'t_sec',t_sec,'strain',strain,'r',r,'slope',slope, ...
+  'tide',tide,'t_days',t_days,'t_sec',t_sec,'strain',strain,'r',r, ...
+  'adm',adm,'adm_std',adm_std,'rp',rp,'trend',trend, ...
   'nobs',nobs,'tide_range',max(tide)-min(tide),'xc',NaN,'latc',NaN,'lonc',NaN, ...
   'suffix','');
 end
@@ -246,7 +259,7 @@ end
 %% ========================================================================
 function [xc, latc, lonc, contrast] = zero_crossing(R, j)
 % Along-track position of the strongest positive-to-negative transition in
-% the tidal correlation - the hinge.
+% the trend-removed tidal response (r_partial) - the hinge.
 %
 % NOT the first zero crossing. With the short along-track window there are
 % 39 blocks per line and the per-block correlation is noisy, so the first
@@ -259,7 +272,7 @@ MIN_CONTRAST = 0.5;   % the drop in mean r either side must be at least this
 MIN_SIDE     = 3;     % blocks required on each side
 
 xc = NaN; latc = NaN; lonc = NaN; contrast = NaN;
-rr = R.r(:,j);
+rr = R.rp(:,j);
 ok = find(isfinite(rr));
 n  = numel(ok);
 if n < 2*MIN_SIDE, return; end
@@ -320,22 +333,26 @@ colormap(ax2, cmap); caxis(ax2, [R.along(1) R.along(end)]/1e3);
 set(get(cb,'ylabel'),'string','Along track (km)','Color',ink);
 set(cb,'XColor',ink_soft,'YColor',ink_soft);
 
+% Detrended: the secular term b*t of the joint fit is removed from each
+% block's series before plotting, so the line drawn IS the admittance and
+% the scatter around it is what the fit actually sees (see header)
 ax3 = axes('parent',h,'Position',[0.10 0.295 0.73 0.175]);
 hold(ax3,'on');
 for b = 1:R.Nblk
-  if R.nobs(b,MAIN_DEPTH) < 5, continue; end
+  if ~isfinite(R.adm(b,MAIN_DEPTH)), continue; end
   s  = R.strain(b,:,MAIN_DEPTH);
   ok = isfinite(s) & isfinite(R.tide);
-  plot(ax3, R.tide, 1e6*s, 'o', 'MarkerSize', 6, 'MarkerFaceColor', cmap(b,:), ...
+  s_dt = s - R.trend(b,MAIN_DEPTH)*(R.t_days - mean(R.t_days(ok)));
+  plot(ax3, R.tide, 1e6*s_dt, 'o', 'MarkerSize', 6, 'MarkerFaceColor', cmap(b,:), ...
     'MarkerEdgeColor','w','LineWidth',0.75);
   xf = linspace(min(R.tide(ok)), max(R.tide(ok)), 2);
-  b0 = mean(s(ok)) - R.slope(b,MAIN_DEPTH)*mean(R.tide(ok));
-  plot(ax3, xf, 1e6*(R.slope(b,MAIN_DEPTH)*xf + b0), '-', 'Color', cmap(b,:), 'LineWidth',1.5);
+  b0 = mean(s_dt(ok)) - R.adm(b,MAIN_DEPTH)*mean(R.tide(ok));
+  plot(ax3, xf, 1e6*(R.adm(b,MAIN_DEPTH)*xf + b0), '-', 'Color', cmap(b,:), 'LineWidth',1.5);
 end
 grid(ax3,'on'); set(ax3, axstyle{:});
 xlabel(ax3,'Platform elevation relative to main pass (m)','Color',ink);
-ylabel(ax3, sprintf('Strain 0-%.0f m (\\mu\\epsilon)', REF_DEPTHS(MAIN_DEPTH)),'Color',ink);
-title(ax3,'Strain against tide, coloured by position along the line','Color',ink);
+ylabel(ax3, sprintf('Detrended strain 0-%.0f m (\\mu\\epsilon)', REF_DEPTHS(MAIN_DEPTH)),'Color',ink);
+title(ax3,'Detrended strain against tide - the fitted lines are the admittance','Color',ink);
 
 ax4 = axes('parent',h,'Position',[0.10 0.055 0.73 0.175]);
 hold(ax4,'on');
@@ -343,17 +360,17 @@ plot(ax4, [R.along(1) R.along(end)]/1e3, [0 0], '-', 'Color', [0.75 0.75 0.75], 
 hleg = []; lbl = {};
 for j = 1:numel(REF_DEPTHS)
   solid = R.nobs(:,j) >= MIN_OBS;
-  hleg(end+1) = plot(ax4, R.along/1e3, R.r(:,j), '-', 'Color', depth_col{j}, 'LineWidth',2); %#ok<AGROW>
-  plot(ax4, R.along(solid)/1e3, R.r(solid,j), depth_mk{j}, 'MarkerSize',8, ...
+  hleg(end+1) = plot(ax4, R.along/1e3, R.rp(:,j), '-', 'Color', depth_col{j}, 'LineWidth',2); %#ok<AGROW>
+  plot(ax4, R.along(solid)/1e3, R.rp(solid,j), depth_mk{j}, 'MarkerSize',8, ...
     'MarkerFaceColor', depth_col{j}, 'MarkerEdgeColor','w','LineWidth',1);
-  plot(ax4, R.along(~solid)/1e3, R.r(~solid,j), depth_mk{j}, 'MarkerSize',8, ...
+  plot(ax4, R.along(~solid)/1e3, R.rp(~solid,j), depth_mk{j}, 'MarkerSize',8, ...
     'MarkerFaceColor','w','MarkerEdgeColor', depth_col{j}, 'LineWidth',1.5);
   lbl{end+1} = sprintf('column 0-%.0f m', REF_DEPTHS(j)); %#ok<AGROW>
 end
 grid(ax4,'on'); set(ax4, axstyle{:}); ylim(ax4,[-1 1]);
 xlabel(ax4,'Along track (km)','Color',ink);
-ylabel(ax4,'Correlation of strain with tide','Color',ink);
-title(ax4, sprintf('Tidal response along the line (hollow: fewer than %d pairs)', MIN_OBS), ...
+ylabel(ax4,'Partial corr. of strain with tide','Color',ink);
+title(ax4, sprintf('Tidal response along the line, trend removed (hollow: fewer than %d pairs)', MIN_OBS), ...
   'Color', ink);
 lg = legend(ax4, hleg, lbl, 'Location','SouthWest');
 set(lg,'TextColor',ink,'Box','off');
@@ -382,18 +399,18 @@ for i = 1:numel(res)
   R = res(i);
   col = PAL.cat(mod(i-1,size(PAL.cat,1))+1,:);
   mk  = PAL.cat_mk{mod(i-1,numel(PAL.cat_mk))+1};
-  hleg(end+1) = plot(ax1, R.along/1e3, R.r(:,j), '-', 'Color', col, 'LineWidth', 2); %#ok<AGROW>
+  hleg(end+1) = plot(ax1, R.along/1e3, R.rp(:,j), '-', 'Color', col, 'LineWidth', 2); %#ok<AGROW>
   solid = R.nobs(:,j) >= MIN_OBS;
-  plot(ax1, R.along(solid)/1e3, R.r(solid,j), mk, 'MarkerSize',7, ...
+  plot(ax1, R.along(solid)/1e3, R.rp(solid,j), mk, 'MarkerSize',7, ...
     'MarkerFaceColor',col,'MarkerEdgeColor','w','LineWidth',1);
-  plot(ax1, R.along(~solid)/1e3, R.r(~solid,j), mk, 'MarkerSize',7, ...
+  plot(ax1, R.along(~solid)/1e3, R.rp(~solid,j), mk, 'MarkerSize',7, ...
     'MarkerFaceColor','w','MarkerEdgeColor',col,'LineWidth',1.5);
   lbl{end+1} = R.pass_name; %#ok<AGROW>
 end
 grid(ax1,'on'); set(ax1, axstyle{:}); ylim(ax1,[-1 1]); xlim(ax1,[0 xmax]);
 xlabel(ax1,'Along track (km)','Color',ink);
-ylabel(ax1,'Correlation of strain with tide','Color',ink);
-title(ax1, sprintf('Tidal response of the 0-%.0f m column, all five lines', REF_DEPTHS(j)), ...
+ylabel(ax1,'Partial corr. of strain with tide','Color',ink);
+title(ax1, sprintf('Tidal response of the 0-%.0f m column, trend removed, all five lines', REF_DEPTHS(j)), ...
   'Color', ink);
 lg = legend(ax1, hleg, lbl, 'Location','eastoutside','Interpreter','none');
 set(lg,'TextColor',ink,'Box','off');
@@ -414,12 +431,12 @@ dmap = [interp1([0 1],[PAL.div_neg; PAL.div_mid], linspace(0,1,half)); ...
 for i = 1:numel(res)
   R = res(i);
   mk = PAL.cat_mk{mod(i-1,numel(PAL.cat_mk))+1};
-  ok = isfinite(R.r(:,j));
+  ok = isfinite(R.rp(:,j));
   [xk, yk] = xy(R.lon, R.lat);
   plot(ax2, xk(ok), yk(ok), '-', 'Color', [0.85 0.85 0.85], 'LineWidth', 0.5);
   for b = 1:R.Nblk
-    if ~isfinite(R.r(b,j)), continue; end
-    ci = max(1, min(ndiv, round((R.r(b,j)+1)/2*(ndiv-1))+1));
+    if ~isfinite(R.rp(b,j)), continue; end
+    ci = max(1, min(ndiv, round((R.rp(b,j)+1)/2*(ndiv-1))+1));
     plot(ax2, xk(b), yk(b), mk, 'MarkerSize', 11, ...
       'MarkerFaceColor', dmap(ci,:), 'MarkerEdgeColor', ink_soft, 'LineWidth', 0.5);
   end
@@ -444,7 +461,7 @@ else
 end
 colormap(ax2, dmap); caxis(ax2,[-1 1]);
 cb = colorbar(ax2,'Position',[0.715 0.07 0.020 0.42]);
-set(get(cb,'ylabel'),'string','Correlation of strain with tide','Color',ink);
+set(get(cb,'ylabel'),'string','Partial corr. of strain with tide','Color',ink);
 set(cb,'XColor',ink_soft,'YColor',ink_soft);
 
 out_fn = fullfile(out_dir, sprintf('EAGER_2022_tidal_summary%s.png', suffix));

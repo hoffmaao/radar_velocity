@@ -107,19 +107,69 @@ gamma(~isfinite(gamma)) = 0;
 
 s_main = bsxfun(@times, amp, (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2));
 
-% Per-pass BULK time shifts, simulating the residual of multipass's z-motion
-% compensation on a floating shelf (the tide-proportional artefact). These
-% are a whole-slice delay, envelope and carrier, exactly the form
-% multipass.m:512-522 applies - and exactly what vdef.coalignPair must
-% measure and remove. Sub-bin magnitudes matching the real residuals.
-tau_bulk_true = [0, 0.7e-9, -0.9e-9, 1.3e-9];   % [s] per pass
+% A bright, band-limited SURFACE RETURN.
+%
+% Without one this synthetic is depth-decaying white noise with no feature
+% at the surface at all: every fast-time bin is independent, so the
+% trace-averaged power profile converges to the smooth 1200 m decay
+% envelope and carries no structure at bin scale. Real accum data is the
+% opposite - the surface is the brightest target in the record and its
+% pulse response spans several bins (the EAGER products show a range
+% sidelobe at +/-5.4 bins at 0.37-0.55 of the main peak).
+%
+% That gap matters beyond realism for its own sake. vdef.coalignPair
+% locates the pair offset from exactly this bin-scale structure, so a
+% synthetic without a surface return cannot exercise the estimator that
+% runs on the real data - it would report ~0 for any sub-bin shift and the
+% test would be measuring nothing. The whole method also references depth
+% to the surface return, so a synthetic that never puts one in the data is
+% a poor model of the input regardless.
+%
+% Built as a band-limited impulse: a rectangular band over 60% of the
+% sampled bandwidth (real radar data is oversampled relative to its chirp
+% bandwidth, which is why the response spreads) with the linear phase for
+% a delay to Surface. The result is a sinc-like pulse with sidelobes,
+% coherent across passes because it is added to s_main before the per-pass
+% mixing, and given an independent phase per trace like any other target.
+kshift = (-floor(Nt/2):floor((Nt-1)/2)).';
+band   = ifftshift(double(abs(kshift) <= 0.6*Nt/2));
+f_bb_s = (fs/Nt) * ifftshift(kshift);
+pulse  = ifft(band .* exp(-1i*2*pi*f_bb_s*Surface));
+pulse  = pulse / max(abs(pulse));
+SURF_AMP = 8;          % surface well above the volume scatter, as in the real data
+s_main = s_main + SURF_AMP * bsxfun(@times, pulse, exp(1i*2*pi*rand(1,Nx)));
+clear kshift band f_bb_s pulse;
+
+% Per-pass time shifts, simulating the residual of multipass's z-motion
+% compensation on a floating shelf (the tide-proportional artefact),
+% applied as a delay of envelope and carrier exactly as multipass.m:512-522
+% does - and exactly what vdef.coalignPair must measure and remove.
+%
+% These VARY ALONG TRACK, which is the case that matters. ref_z is a
+% per-column vector: the two passes walk the line at different times and
+% sometimes in opposite directions, so the tide changes by different
+% amounts at each end. On the EAGER pairs the along-track spread within a
+% single pair reaches 7.4 ns, LARGER than the mean offset. A scalar
+% estimator passes a constant-shift test and still leaves that structure
+% behind, where it changes sign mid-line and imitates a flexure hinge - so
+% a constant-only test would certify the exact failure that mattered.
+%
+% Each pass gets a mean plus a linear along-track ramp, with the ramps
+% differing in sign and slope so no single constant can fix any pair.
+tau_bulk_mean  = [0, 0.7e-9, -0.9e-9, 1.3e-9];   % [s] per pass
+tau_bulk_ramp  = [0, 1.6e-9, 1.1e-9, -1.4e-9];   % [s] end-to-end tilt
+xr = linspace(-0.5, 0.5, Nx);                    % normalised along-track
+tau_bulk_true = cell(1, numel(tau_bulk_mean));
+for k = 1:numel(tau_bulk_mean)
+  tau_bulk_true{k} = tau_bulk_mean(k) + tau_bulk_ramp(k)*xr;
+end
 
 en_idxs = find(pass_en);
 data = complex(zeros(Nt, Nx, numel(en_idxs), 'single'));
 for kk = 1:numel(en_idxs)
   k = en_idxs(kk);
   if k == 1
-    data(:,:,kk) = single(apply_bulk_delay(s_main, tau_bulk_true(k), fc, fs));
+    data(:,:,kk) = single(apply_bulk_delay(s_main, tau_bulk_true{k}, fc, fs));
     continue;
   end
   % Matched-filter convention: a delay dtau multiplies by exp(-1i*2*pi*fc*dtau)
@@ -128,7 +178,7 @@ for kk = 1:numel(en_idxs)
   indep    = bsxfun(@times, amp, (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2));
   slice = bsxfun(@times, sqrt(gamma), carrier) .* s_main ...
     + bsxfun(@times, sqrt(max(1-gamma,0)), indep);
-  data(:,:,kk) = single(apply_bulk_delay(slice, tau_bulk_true(k), fc, fs));
+  data(:,:,kk) = single(apply_bulk_delay(slice, tau_bulk_true{k}, fc, fs));
   clear dtau_map carrier indep slice;
 end
 clear s_main;
@@ -267,16 +317,35 @@ for sec_idx = [3 4]
   assert(max(abs(out.baseline_z - (baseline_z(sec_idx) - baseline_z(1)))) < 1e-6, ...
     'vertical baseline is wrong');
 
-  % Coalignment: the injected per-pass bulk delay (the tide-proportional
-  % artefact of multipass's z-motion compensation) must be measured to well
-  % under a bin and recorded in the product
-  expect_bulk = tau_bulk_true(sec_idx) - tau_bulk_true(1);
+  % Coalignment. The injected artefact varies along track, so what has to
+  % be recovered is the PROFILE, not just its mean - a scalar estimator
+  % would match the mean and leave the ramp, which is the failure that
+  % manufactured a false hinge on the real data.
+  expect_prof = tau_bulk_true{sec_idx} - tau_bulk_true{1};
   assert(out.coalign_applied, 'coalignment did not run for pair 1->%d', sec_idx);
-  fprintf('coalign: measured %.3f ns, injected %.3f ns (quality %.2f)\n', ...
-    out.dtau_bulk*1e9, expect_bulk*1e9, out.coalign_quality);
-  assert(abs(out.dtau_bulk - expect_bulk) < 0.25e-9, ...
-    'pair 1->%d: coalign measured %.3f ns against an injected %.3f ns', ...
-    sec_idx, out.dtau_bulk*1e9, expect_bulk*1e9);
+  got_prof = out.dtau_bulk_profile;
+  assert(numel(got_prof) == Nx, ...
+    'pair 1->%d: dtau_bulk_profile has %d entries for %d columns', ...
+    sec_idx, numel(got_prof), Nx);
+  prof_err = got_prof - expect_prof;
+  inj_range = max(expect_prof) - min(expect_prof);
+  fprintf(['coalign: mean %.3f vs %.3f ns, along-track range %.3f vs %.3f ns, ' ...
+    'max profile error %.3f ns (%d/%d windows, quality %.2f)\n'], ...
+    out.dtau_bulk*1e9, mean(expect_prof)*1e9, ...
+    (max(got_prof)-min(got_prof))*1e9, inj_range*1e9, ...
+    max(abs(prof_err))*1e9, out.coalign_n_win_ok, out.coalign_n_win, ...
+    out.coalign_quality);
+  assert(abs(out.dtau_bulk - mean(expect_prof)) < 0.25e-9, ...
+    'pair 1->%d: coalign mean %.3f ns against an injected mean %.3f ns', ...
+    sec_idx, out.dtau_bulk*1e9, mean(expect_prof)*1e9);
+  assert(max(abs(prof_err)) < 0.35e-9, ...
+    'pair 1->%d: coalign profile is off by up to %.3f ns (injected range %.3f ns)', ...
+    sec_idx, max(abs(prof_err))*1e9, inj_range*1e9);
+  % The ramp must actually be tracked, not just averaged away: a scalar
+  % estimator would leave a residual as large as the injected range
+  assert(max(abs(prof_err)) < 0.4*inj_range, ...
+    'pair 1->%d: profile residual %.3f ns is not small against the injected range %.3f ns - the along-track structure was not tracked', ...
+    sec_idx, max(abs(prof_err))*1e9, inj_range*1e9);
 
   % Strain rate
   assert(all(isfinite(out.S1)), 'not every block was inverted');
@@ -350,23 +419,144 @@ fprintf('\n3 -> 4 pair (neither is the main pass): S1 error %+.3e /yr (%.1f%%)\n
 assert(abs(S1_err34) < tol_S1*abs(S1_true), ...
   'pair 3->4: S1 not recovered within %.0f%%', 100*tol_S1);
 
-% Coalignment on a pair where neither slice is the main pass: the bulk
-% delays do not cancel, so this exercises the differencing too
-expect_bulk34 = tau_bulk_true(4) - tau_bulk_true(3);
+% Coalignment on a pair where neither slice is the main pass: the delays do
+% not cancel, so this exercises the differencing too. Passes 3 and 4 have
+% ramps of OPPOSITE sign, so their difference has the steepest along-track
+% tilt in the test - the hardest profile to track.
+expect_prof34 = tau_bulk_true{4} - tau_bulk_true{3};
 assert(out34.coalign_applied, 'coalignment did not run for pair 3->4');
-fprintf('coalign 3->4: measured %.3f ns, injected %.3f ns (quality %.2f)\n', ...
-  out34.dtau_bulk*1e9, expect_bulk34*1e9, out34.coalign_quality);
-assert(abs(out34.dtau_bulk - expect_bulk34) < 0.25e-9, ...
-  'pair 3->4: coalign measured %.3f ns against an injected %.3f ns', ...
-  out34.dtau_bulk*1e9, expect_bulk34*1e9);
+prof_err34 = out34.dtau_bulk_profile - expect_prof34;
+inj_range34 = max(expect_prof34) - min(expect_prof34);
+fprintf(['coalign 3->4: mean %.3f vs %.3f ns, range %.3f vs %.3f ns, ' ...
+  'max profile error %.3f ns (%d/%d windows)\n'], ...
+  out34.dtau_bulk*1e9, mean(expect_prof34)*1e9, ...
+  (max(out34.dtau_bulk_profile)-min(out34.dtau_bulk_profile))*1e9, ...
+  inj_range34*1e9, max(abs(prof_err34))*1e9, ...
+  out34.coalign_n_win_ok, out34.coalign_n_win);
+assert(abs(out34.dtau_bulk - mean(expect_prof34)) < 0.25e-9, ...
+  'pair 3->4: coalign mean %.3f ns against an injected mean %.3f ns', ...
+  out34.dtau_bulk*1e9, mean(expect_prof34)*1e9);
+assert(max(abs(prof_err34)) < 0.35e-9, ...
+  'pair 3->4: coalign profile is off by up to %.3f ns (injected range %.3f ns)', ...
+  max(abs(prof_err34))*1e9, inj_range34*1e9);
+assert(max(abs(prof_err34)) < 0.4*inj_range34, ...
+  'pair 3->4: profile residual %.3f ns is not small against the injected range %.3f ns', ...
+  max(abs(prof_err34))*1e9, inj_range34*1e9);
 
-%% Coalignment rejects a decorrelated pair rather than applying noise
+%% Coalignment must not eat the signal it is supposed to leave alone
 % =====================================================================
-% Two INDEPENDENT speckle fields share no signal, so the surface-window
-% cross-spectrum phase slope is noise: quality lands near 1/sqrt(Npairs)
-% (about 0.13 for the default window), far below the coalign_min_quality
-% floor, and the estimate must be rejected with the secondary returned
-% bit-identical instead of shifted by a spurious bulk delay.
+% The concern is real and worth a standing guard: coalignPair measures a
+% shift from the surface window and applies it to the whole trace, so does
+% a deforming column drag the alignment along with it, quietly removing
+% the very thing being measured?
+%
+% Two independent reasons it cannot, both asserted here.
+%
+% ONE - it does not SEE the signal. Column deformation moves internal
+% reflectors; it does not move the surface echo, because the antenna-to-
+% surface range is unchanged. So a pair differing ONLY by column strain
+% must coalign to ~0. Built by taking a strained pass and undoing its
+% injected bulk delay, leaving strain as the sole difference.
+%
+% TWO - an alignment error leaks in only WEAKLY, and the coupling is
+% measured here rather than assumed. The correction is constant in DEPTH
+% and vdef.differentialRange reports dtau relative to each trace's own
+% surface reference bin, i.e. a DIFFERENCE across depth, so the constant
+% itself cancels. What does not cancel is the mis-registration: shifting
+% by d means bin t is compared against t-d, so the residual goes as
+% d * (dtau'(t) - dtau'(t_ref)) - the shift times the change in strain
+% between that depth and the reference depth. Second order, not zero.
+%
+% That coupling is the whole reason coalignment accuracy matters, and it
+% closes the artefact story quantitatively. At the ~6% measured here, the
+% scalar coalignment's 3-7 ns residual leaks 0.2-0.4 ns, i.e. 15-35 mm of
+% apparent column change - which is the size of the 30 mm per metre of
+% tide artefact that produced the false hinge. The per-column estimate is
+% good to ~0.25 ns, leaking ~1 mm, comfortably under the 8.3 mm floor.
+D = load(in_fn, 'data');
+k_str = 3;                                   % a pass carrying real strain
+s_ref_c = double(D.data(:,:,1));             % pass 1: no bulk delay injected
+s_str   = double(D.data(:,:,2));             % pass 3 slice (2nd enabled)
+% undo pass 3's injected bulk delay, leaving column strain as the only
+% difference from the reference
+s_str = apply_bulk_delay(s_str, -tau_bulk_true{k_str}, fc, fs);
+clear D;
+
+param_c = vvel_defaults(param);
+[~, info_sig] = vdef.coalignPair(s_ref_c, s_str, ...
+  struct('Time', Time, 'Surface', Surface*ones(1,Nx), 'fc', fc), param_c.vvel);
+fprintf('coalign on a strain-only pair: %.3f ns (quality %.2f)\n', ...
+  info_sig.dtau_bulk*1e9, info_sig.quality);
+assert(abs(info_sig.dtau_bulk) < 0.30e-9, ...
+  ['coalignment measured %.3f ns on a pair whose ONLY difference is column ' ...
+   'strain - it is tracking the signal, not the misalignment'], ...
+  info_sig.dtau_bulk*1e9);
+
+opts_c = param_c.vvel;
+opts_c.delta_t = 1;
+SPUR = 3.0e-9;                                   % 0.9 bins, deliberately wrong
+[ig1, ch1] = vdef.multilook(s_ref_c, s_str, opts_c.mlook_window);
+m1 = struct('Time',Time,'Surface',Surface*ones(1,Nx),'fc',fc, ...
+  'phase',angle(ig1),'coherence',ch1);
+[dt1, ~] = vdef.differentialRange(m1, opts_c);
+s_shift = apply_bulk_delay(s_str, SPUR, fc, fs);
+[ig2, ch2] = vdef.multilook(s_ref_c, s_shift, opts_c.mlook_window);
+m2 = struct('Time',Time,'Surface',Surface*ones(1,Nx),'fc',fc, ...
+  'phase',angle(ig2),'coherence',ch2);
+[dt2, ~] = vdef.differentialRange(m2, opts_c);
+both = isfinite(dt1) & isfinite(dt2);
+dmax = max(abs(dt1(both) - dt2(both)));
+leak = dmax / SPUR;
+fprintf(['a %.2f ns spurious shift moves the referenced dtau by %.4f ns ' ...
+  '(leakage %.1f%%)\n'], SPUR*1e9, dmax*1e9, 100*leak);
+assert(leak < 0.10, ...
+  ['an alignment error leaks into the referenced dtau at %.1f%%, above the ' ...
+   '10%% this method tolerates - the constant is no longer cancelling and ' ...
+   'coalignment accuracy would dominate the result'], 100*leak);
+assert(leak > 0.005, ...
+  ['leakage came out %.3f%%, essentially zero. The mis-registration term is ' ...
+   'real and should be a few percent; a null here means the test is not ' ...
+   'exercising it and would not catch the coupling growing'], 100*leak);
+clear s_ref_c s_str s_shift ig1 ig2 ch1 ch2 m1 m2 dt1 dt2;
+
+%% A scalar-only coalignment must FAIL to remove the along-track structure
+% =====================================================================
+% The guard on the guard. If coalign_win_cols is set to one whole-line
+% window - the old scalar behaviour - the residual must be comparable to
+% the injected range, confirming that the per-column test above is
+% actually testing something the scalar could not do.
+param_scalar = param;
+param_scalar.vvel.coalign_win_cols = Inf;
+param_scalar = vvel_defaults(param_scalar);
+D = load(in_fn, 'data');    % data was cleared after the product was written
+sA = double(D.data(:,:,2)); % pass 3 slice
+sB = double(D.data(:,:,3)); % pass 4 slice
+clear D;
+[~, info_scalar] = vdef.coalignPair(sA, sB, ...
+  struct('Time', Time, 'Surface', Surface*ones(1,Nx), 'fc', fc), param_scalar.vvel);
+scalar_resid = max(abs(info_scalar.dtau_profile - expect_prof34));
+fprintf('scalar-only coalign: %d window, max profile error %.3f ns against %.3f ns injected range\n', ...
+  info_scalar.n_win, scalar_resid*1e9, inj_range34*1e9);
+assert(info_scalar.n_win == 1, 'coalign_win_cols = Inf must give exactly one window');
+assert(scalar_resid > 0.3*inj_range34, ...
+  'a scalar coalignment left only %.3f ns of a %.3f ns ramp, so the per-column test is not discriminating', ...
+  scalar_resid*1e9, inj_range34*1e9);
+clear sA sB;
+
+%% Coalignment rejects a window with no surface return rather than applying noise
+% =====================================================================
+% Two INDEPENDENT noise fields carry no surface return at all, so their
+% trace-averaged power profiles are flat apart from independent
+% fluctuations and nothing real correlates: quality lands far below the
+% coalign_min_quality floor and the estimate must be rejected, with the
+% secondary returned bit-identical instead of shifted by a spurious delay.
+%
+% Note what this does NOT test. The estimator correlates trace-averaged
+% POWER, which is insensitive to interferometric coherence, so a merely
+% decorrelated pair over a real surface is measured correctly rather than
+% rejected - that is the intended behaviour, since the envelope position
+% is well defined however the phase behaves. The failure mode the floor
+% guards is an empty window, which is what this builds.
 rand('seed', 13); randn('seed', 13);   %#ok<RAND>
 noise_a = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);
 noise_b = (randn(Nt,Nx) + 1i*randn(Nt,Nx))/sqrt(2);

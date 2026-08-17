@@ -43,7 +43,7 @@ jobs:
         run: mkdir -p figs opr_vvel/test/output
 
       # Each entrypoint is invoked by name from its own directory, because
-      # all three self-locate with mfilename('fullpath') to find +vdef.
+      # they all self-locate with mfilename('fullpath') to find +vdef.
       #
       # The try/catch is what makes a failed assert fail the job: Octave
       # does not reliably exit non-zero on an uncaught error, so the exit
@@ -58,6 +58,16 @@ jobs:
         working-directory: scripts
         run: |
           octave --no-gui --eval "try, test_surface_reference; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
+      - name: Tide admittance fit
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, test_tide_admittance; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
+      - name: Network inversion
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, test_invert_network; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
 
       - name: vvel_task end to end
         working-directory: opr_vvel/test
