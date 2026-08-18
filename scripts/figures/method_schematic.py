@@ -40,9 +40,10 @@ Annotation labels are drawn on the figure, but the (a)/(b)/(c) panel
 headers and caption lines are not - the lettering is added separately in
 the slide or manuscript. The tide/network panel is labelled generically
 (displacement vs time) so it reads as the estimation concept. The
-embedded pair's title is generated from the npz metadata so it always
-names the pair actually shown. Labels are placed clear of every line and
-arrow (verified on zoomed crops).
+embedded interferogram carries no title either - its pair metadata,
+read from the npz so it always names the pair actually shown, prints to
+stdout instead. Labels are placed clear of every line and arrow
+(verified on zoomed crops).
 
 Input: data/EAGER_2022_igram_schematic.npz, extracted on the CReSIS
 server from the CSARP_multipass comp_mode 3 product through the production
