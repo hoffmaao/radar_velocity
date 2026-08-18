@@ -428,12 +428,13 @@ xy = @(lon,lat) deal((lon-lon0)*111320*cosd(lat0)/1e3, (lat-lat0)*110540/1e3);
 ndiv = 256; half = round(ndiv/2);
 dmap = [interp1([0 1],[PAL.div_neg; PAL.div_mid], linspace(0,1,half)); ...
         interp1([0 1],[PAL.div_mid; PAL.div_pos], linspace(0,1,ndiv-half))];
+hTrk = gobjects(1, numel(res));
 for i = 1:numel(res)
   R = res(i);
   mk = PAL.cat_mk{mod(i-1,numel(PAL.cat_mk))+1};
   ok = isfinite(R.rp(:,j));
   [xk, yk] = xy(R.lon, R.lat);
-  plot(ax2, xk(ok), yk(ok), '-', 'Color', [0.85 0.85 0.85], 'LineWidth', 0.5);
+  hTrk(i) = plot(ax2, xk(ok), yk(ok), '-', 'Color', [0.85 0.85 0.85], 'LineWidth', 0.5);
   for b = 1:R.Nblk
     if ~isfinite(R.rp(b,j)), continue; end
     ci = max(1, min(ndiv, round((R.rp(b,j)+1)/2*(ndiv-1))+1));
@@ -464,10 +465,83 @@ cb = colorbar(ax2,'Position',[0.715 0.07 0.020 0.42]);
 set(get(cb,'ylabel'),'string','Partial corr. of strain with tide','Color',ink);
 set(cb,'XColor',ink_soft,'YColor',ink_soft);
 
+% REMA v2 hillshade (10 m browse, tile 17_33) under everything, drawn last
+% so the axis limits are final. Tracks flip to white: light gray
+% disappears on the hillshade.
+if rema_underlay(ax2, fullfile(gis_dir,'rema','17_33_10m_v2.0_browse.tif'), lat0, lon0)
+  set(hTrk, 'Color', 'w', 'LineWidth', 0.7);
+  grid(ax2, 'off');
+end
+
 out_fn = fullfile(out_dir, sprintf('EAGER_2022_tidal_summary%s.png', suffix));
 print(h, out_fn, '-dpng', '-r120');
 close(h);
 fprintf('\nWrote %s\n', out_fn);
+end
+
+%% ========================================================================
+function ok = rema_underlay(ax, tif, lat0, lon0)
+%REMA_UNDERLAY Resample the REMA v2 hillshade under a tangent-plane axes.
+%   The axes' current xlim/ylim (km east/north of lon0/lat0) define the
+%   region. The EPSG:3031 raster is inverse-mapped onto that grid (the
+%   tangent frame is rotated ~12 deg against the 3031 grid here, so the
+%   image cannot just be dropped in), lifted into a light gray range so
+%   the data drawn on top stays dominant, and pushed to the bottom of the
+%   draw order. The sampled region is padded 8% beyond the limits so a
+%   small later limit adjustment does not expose white strips. Returns
+%   false (with a message) when the tile is missing or unreadable, and
+%   the figure then renders exactly as it did without imagery.
+%
+%   The browse tif is a COG whose overview IFDs make geotiffinfo error
+%   ("multiple images ... sizes are different"), so the georeference comes
+%   from georasterinfo and the pixels from imread on IFD 1.
+ok = false;
+if ~exist(tif,'file')
+  fprintf('REMA hillshade not found (%s) - no imagery underlay.\n', tif);
+  return;
+end
+try
+  R3 = georasterinfo(tif).RasterReference;
+  xl = xlim(ax); yl = ylim(ax);
+  xpad = 0.08*diff(xl); ypad = 0.08*diff(yl);
+  xg = [xl(1)-xpad, xl(2)+xpad]; yg = [yl(1)-ypad, yl(2)+ypad];
+  nq = 1200;
+  [XK, YK] = meshgrid(linspace(xg(1), xg(2), nq), linspace(yg(1), yg(2), nq));
+  LAT = lat0 + YK*1e3/110540;
+  LON = lon0 + XK*1e3./(111320*cosd(lat0));
+  [XM, YM] = projfwd(projcrs(3031), LAT, LON);
+  px = R3.CellExtentInWorldX;
+  c0 = max(1, floor((min(XM(:)) - R3.XWorldLimits(1))/px) - 2);
+  c1 = min(R3.RasterSize(2), ceil((max(XM(:)) - R3.XWorldLimits(1))/px) + 2);
+  r0 = max(1, floor((R3.YWorldLimits(2) - max(YM(:)))/px) - 2);
+  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - min(YM(:)))/px) + 2);
+  if c1 <= c0 || r1 <= r0
+    fprintf('REMA tile does not cover this view - no imagery underlay.\n');
+    return;
+  end
+  A = double(imread(tif, 'Index', 1, 'PixelRegion', {[r0 r1],[c0 c1]}));
+  A(A == 0) = NaN;                                  % nodata
+  xa = R3.XWorldLimits(1) + ((c0:c1) - 0.5)*px;
+  ya = R3.YWorldLimits(2) - ((r0:r1) - 0.5)*px;     % descending
+  V = interp2(xa, flip(ya(:)), flipud(A), XM, YM, 'linear');
+  vv = sort(V(isfinite(V)));
+  if isempty(vv)
+    fprintf('REMA tile is empty over this view - no imagery underlay.\n');
+    return;
+  end
+  lo = vv(max(1,round(0.02*numel(vv)))); hi = vv(round(0.98*numel(vv)));
+  g = min(max((V - lo)/max(hi-lo, 1), 0), 1);
+  g = 0.58 + 0.40*g;                                % recessive light grays
+  g(~isfinite(V)) = 1;                              % nodata as paper white
+  hImg = image(ax, 'XData', xg, 'YData', yg, 'CData', repmat(g,[1 1 3]));
+  uistack(hImg, 'bottom');
+  xlim(ax, xl); ylim(ax, yl);
+  ok = true;
+  fprintf('REMA hillshade underlay: %d x %d px read, %d x %d resampled\n', ...
+    r1-r0+1, c1-c0+1, nq, nq);
+catch ME
+  fprintf('REMA underlay failed (%s) - continuing without imagery.\n', ME.message);
+end
 end
 
 %% ========================================================================
