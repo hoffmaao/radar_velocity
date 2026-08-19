@@ -424,7 +424,7 @@ def panel_c(ax, d):
     for ti, ei in zip(t, eta):
         ax.plot(ti, ei, "o", ms=6, mfc=ORANGE, mec="white", mew=0.8,
                 zorder=4)
-    ax.text(ts[-1] + 0.04, float((design(ts[-1:]) @ coef)[0]), "tide(t)",
+    ax.text(ts[-1] + 0.015 * span, float((design(ts[-1:]) @ coef)[0]), "tide(t)",
             fontsize=9, color=INK_SOFT, va="center")
 
     # generic axes: the per-epoch displacement rides the tide in time, so

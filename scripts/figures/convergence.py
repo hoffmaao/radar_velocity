@@ -74,10 +74,13 @@ def cats_series():
     return _CATS
 
 
-def apres_regression(site="GA04"):
+def apres_regression(site="GA04", cats=None):
     """One site's vsr vs tide rate; points and (for GA04) the fit, as in
-    diagnostics/apres_rate_check.py."""
-    tt, th = cats_series()
+    diagnostics/apres_rate_check.py.
+
+    The CATS table is the same for every site, so the caller passes it in;
+    the only thing this can fail to find is the site's own pair products."""
+    tt, th = cats_series() if cats is None else cats
 
     def tide_rate(d):
         import bisect
@@ -133,10 +136,11 @@ def main():
     # regress each site once and reuse; a site with no pair products is
     # named on stdout, because with no in-plot text a silently missing
     # colour would leave the caption claiming a series that is not drawn
+    cats = cats_series()
     fits = {}
     for site, *_ in SITES:
         try:
-            fits[site] = apres_regression(site)
+            fits[site] = apres_regression(site, cats)
         except FileNotFoundError as e:
             print(f"warning: {site} has no pair products ({e.filename}) - "
                   f"absent from panel (a), but still named in the caption")
