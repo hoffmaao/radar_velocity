@@ -4,9 +4,9 @@
 %
 %   (a) MAP. Per-block tidal response (mm of column change per metre of
 %       tide, top 100 m, network inversion) for the four calibrated lines,
-%       on the local tangent plane with the MEaSUREs grounding line.
-%       Diverging colour about zero. This is where a spatial pattern would
-%       show.
+%       on the local tangent plane with the MEaSUREs grounding line, over
+%       a REMA v2 10 m hillshade. Diverging colour about zero. This is
+%       where a spatial pattern would show.
 %
 %   (b) THE PATTERN TEST. All calibrated lines' per-block responses
 %       against along-track position, with their inverse-variance stack -
