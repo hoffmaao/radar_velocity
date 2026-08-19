@@ -57,13 +57,27 @@ MODEL_MID, MODEL_LO, MODEL_HI = -1.23, -2.2, -0.55   # L = 1.5..3 km
 RETRACTED_CHAIN = 3.79               # apres_comparison.py chaining artefact
 
 
+_CATS = None
+
+
+def cats_series():
+    """The CATS2008 tide series over the ApRES window, parsed once and
+    shared by every site's regression."""
+    global _CATS
+    if _CATS is None:
+        tt, th = [], []
+        fn = os.path.join(ROOT, "scripts/diagnostics/cats2008_apres_window.csv")
+        with open(fn) as f:
+            for r in csv.DictReader(f):
+                tt.append(float(r["datenum"])); th.append(float(r["tide_m"]))
+        _CATS = (tt, th)
+    return _CATS
+
+
 def apres_regression(site="GA04"):
     """One site's vsr vs tide rate; points and (for GA04) the fit, as in
     diagnostics/apres_rate_check.py."""
-    tt, th = [], []
-    with open(os.path.join(ROOT, "scripts/diagnostics/cats2008_apres_window.csv")) as f:
-        for r in csv.DictReader(f):
-            tt.append(float(r["datenum"])); th.append(float(r["tide_m"]))
+    tt, th = cats_series()
 
     def tide_rate(d):
         import bisect
@@ -116,7 +130,19 @@ def main():
              ("GA01", AQUA,   0.3, 12),
              ("GA05", YELLOW, 0.6, 20),
              ("GA10", MAGENTA, 0.6, 20)]
-    xs, ys, A, se, r2, mx, my = apres_regression("GA04")
+    # regress each site once and reuse; a site with no pair products is
+    # named on stdout, because with no in-plot text a silently missing
+    # colour would leave the caption claiming a series that is not drawn
+    fits = {}
+    for site, *_ in SITES:
+        try:
+            fits[site] = apres_regression(site)
+        except FileNotFoundError as e:
+            print(f"warning: {site} has no pair products ({e.filename}) - "
+                  f"absent from panel (a), but still named in the caption")
+    if "GA04" not in fits:
+        raise SystemExit("GA04 pair products are required for the fit of record")
+    xs, ys, A, se, r2, mx, my = fits["GA04"]
     A_mm = 1e3 * A * 100
     se_mm = 1e3 * se * 100
 
@@ -129,10 +155,9 @@ def main():
     ax1.axhline(0, color="#bfbfbf", lw=1)
     ax1.axvline(0, color="#bfbfbf", lw=1)
     for site, col, alpha, size in SITES:
-        try:
-            sx, sy, *_ = apres_regression(site)
-        except FileNotFoundError:
+        if site not in fits:
             continue
+        sx, sy, *_ = fits[site]
         ax1.scatter(sx, [1e6 * y for y in sy], s=size, color=col,
                     alpha=alpha, edgecolors="none", zorder=2)
     xf = [min(xs), max(xs)]

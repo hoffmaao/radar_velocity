@@ -511,10 +511,11 @@ try
   LON = lon0 + XK*1e3./(111320*cosd(lat0));
   [XM, YM] = projfwd(projcrs(3031), LAT, LON);
   px = R3.CellExtentInWorldX;
+  py = R3.CellExtentInWorldY;                       % may differ from px
   c0 = max(1, floor((min(XM(:)) - R3.XWorldLimits(1))/px) - 2);
   c1 = min(R3.RasterSize(2), ceil((max(XM(:)) - R3.XWorldLimits(1))/px) + 2);
-  r0 = max(1, floor((R3.YWorldLimits(2) - max(YM(:)))/px) - 2);
-  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - min(YM(:)))/px) + 2);
+  r0 = max(1, floor((R3.YWorldLimits(2) - max(YM(:)))/py) - 2);
+  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - min(YM(:)))/py) + 2);
   if c1 <= c0 || r1 <= r0
     fprintf('REMA tile does not cover this view - no imagery underlay.\n');
     return;
@@ -522,7 +523,7 @@ try
   A = double(imread(tif, 'Index', 1, 'PixelRegion', {[r0 r1],[c0 c1]}));
   A(A == 0) = NaN;                                  % nodata
   xa = R3.XWorldLimits(1) + ((c0:c1) - 0.5)*px;
-  ya = R3.YWorldLimits(2) - ((r0:r1) - 0.5)*px;     % descending
+  ya = R3.YWorldLimits(2) - ((r0:r1) - 0.5)*py;     % descending
   V = interp2(xa, flip(ya(:)), flipud(A), XM, YM, 'linear');
   vv = sort(V(isfinite(V)));
   if isempty(vv)

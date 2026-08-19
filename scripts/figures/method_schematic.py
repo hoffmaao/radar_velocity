@@ -8,7 +8,9 @@ Three panels:
       talk. Left: the two-pass geometry - the antenna rides the surface
       and the surface rides the tide, so the vertical baseline B_z IS
       the tide; nadir rays (no air path, no refraction bend) down to an
-      internal layer displaced by dh between passes.
+      internal layer that rides that heave and then moves a further dh
+      relative to the surface - the higher tide leaving the thinner
+      column, and dh being the only part the method can see.
       Middle: the experiment - a layered floating column, the same line
       walked 13 times over four days, accumulation and vertical velocity
       acting on the column, the tide heaving it. Right: a REAL
@@ -114,8 +116,23 @@ def panel_a_geometry(ax):
     Everything belonging to one epoch shares one colour: pass i (the
     reference, at the HIGHER tide in the embedded pair) is orange - solid
     surface, marker, label, solid layer; pass j is blue - dashed surface,
-    dotted layer. Blue = lower tide matches panel (b)."""
+    dotted layer. Blue = lower tide matches panel (b).
+
+    SIGN CONVENTION, and it must stay this way: a HIGHER tide THINS the
+    column (the measured sign, admittance -1.24 mm/m). Between the passes
+    the surface falls by the heave B = y_i - y_j; the layer falls by that
+    heave PLUS a further DH, so the layer sits DEEPER below the surface at
+    the lower-tide epoch j than at the higher-tide epoch i. The rigid part
+    B is invisible to the method - only the surface-referenced remainder
+    is measurable - so the faint tick marks where the layer would sit had
+    it merely ridden the tide, and the dh arrow spans DH alone, never the
+    heave. dh here is the same quantity as the panel (b) profile and the
+    interferogram colourbar: layer displacement relative to the surface."""
     y_i, y_j = 7.4, 6.5      # surface height at each pass epoch
+    B = y_i - y_j            # tidal heave of the surface between passes
+    DH = 0.6                 # layer displacement relative to the surface,
+                             # exaggerated (it is mm against m of heave)
+                             # but kept well under B so the two read apart
     # pass i sits right of the B_z label so its ray clears the text
     xi, xj = 3.7, 5.6        # antenna positions along the line
 
@@ -152,27 +169,37 @@ def panel_a_geometry(ax):
     ax.text(xj + 0.4, y_j + 0.22, "pass $j$", fontsize=9, color=BLUE,
             ha="left", va="bottom")
 
-    # nadir rays to the layer at each epoch
-    lay = lambda x: 2.9 - (2.9 - 1.95) / (6.6 - 1.2) * (x - 1.2)
+    # nadir rays to the layer at each epoch. The layer baseline sits high
+    # enough that the epoch-j layer, the rigid-heave tick and the dh arrow
+    # all clear the bottom of the axes.
+    XL0, XL1 = 1.2, 6.6          # layer extent along track
+    LY0, LY1 = 3.95, 3.00        # epoch-i layer height at each end
+    lay = lambda x: LY0 - (LY0 - LY1) / (XL1 - XL0) * (x - XL0)
     ax.add_patch(FancyArrowPatch((xi, y_i), (xi, lay(xi) + 0.06),
                                  arrowstyle="-|>", color=AQUA, lw=1.3,
                                  mutation_scale=9))
-    ax.add_patch(FancyArrowPatch((xj, y_j), (xj, lay(xj) - 0.55 + 0.06),
+    ax.add_patch(FancyArrowPatch((xj, y_j), (xj, lay(xj) - (B + DH) + 0.06),
                                  arrowstyle="-|>", color=AQUA, lw=1.3,
                                  mutation_scale=9))
 
     # the layer at each epoch, coloured like its pass: solid orange at the
-    # higher-tide epoch i, dotted blue at epoch j, lower with the surface
-    ax.plot([1.2, 6.6], [2.9, 1.95], color=ORANGE, lw=1.6)
-    xs = np.linspace(1.2, 6.6, 50)
-    ax.plot(xs, lay(xs) - 0.55, ls=":", color=BLUE, lw=1.3)
-    ax.text(1.15, 3.1, "layer", fontsize=9, color=ORANGE, ha="left",
+    # higher-tide epoch i, dotted blue at epoch j, which rode the surface
+    # down by the heave B and then a further DH as the column thickened
+    xs = np.linspace(XL0, XL1, 50)
+    ax.plot([XL0, XL1], [LY0, LY1], color=ORANGE, lw=1.6)
+    ax.plot(xs, lay(xs) - (B + DH), ls=":", color=BLUE, lw=1.3)
+    ax.text(1.15, LY0 + 0.2, "layer", fontsize=9, color=ORANGE, ha="left",
             va="bottom")
-    ax.add_patch(FancyArrowPatch((4.3, lay(4.3)), (4.3, lay(4.3) - 0.55),
-                                 arrowstyle="<|-|>", color=INK, lw=1.1,
-                                 mutation_scale=8))
-    ax.text(4.38, lay(4.3) - 0.85, "$dh$", fontsize=9, color=INK, ha="left",
-            va="top")
+    # where the layer would sit had it only ridden the tide: the rigid part
+    # the method cannot see. Faint and local to the dh annotation.
+    xt = np.array([3.95, 4.75])
+    ax.plot(xt, lay(xt) - B, ls="--", color=INK_SOFT, lw=0.8)
+    ax.add_patch(FancyArrowPatch((4.3, lay(4.3) - B),
+                                 (4.3, lay(4.3) - B - DH),
+                                 arrowstyle="<->", color=INK, lw=1.1,
+                                 mutation_scale=7))
+    ax.text(4.38, lay(4.3) - (B + DH) - 0.3, "$dh$", fontsize=9, color=INK,
+            ha="left", va="top")
 
     ax.set_xlim(0, 10); ax.set_ylim(0.9, 10.4)
     ax.axis("off")
@@ -256,7 +283,7 @@ def panel_a_igram(ax, cax, d):
     # surface reference, as in the production chain: the phase 50 ns below
     # the surface return defines zero for each column
     iref = int(np.argmin(np.abs(tw - 0.05)))
-    refc = sm[iref - 1:iref + 2, :].mean(axis=0)
+    refc = sm[max(iref - 1, 0):iref + 2, :].mean(axis=0)
     refc = refc / np.maximum(np.abs(refc), 1e-12)
     phi = np.angle(sm * np.conj(refc)[None, :])
 
@@ -339,14 +366,20 @@ def panel_b_profile(ax):
 
 
 def panel_c(ax, d):
-    """The tide sampling and pair network, on formal labelled axes: real
-    dates on x, metres of tide on y."""
+    """The tide sampling and pair network, on formal labelled axes: time
+    on x, metres of tide on y.
+
+    The axes are unticked and generically labelled, so the x origin is
+    arbitrary: work in days since the first pass rather than anchoring to
+    a calendar date. The harmonic basis is in cycles per day, so a
+    constant shift only moves the fitted phase - the curve is unchanged.
+    Every limit and callout position is derived from the data, so a
+    re-extract over a different window still renders in frame."""
     # the real sampling: per-pass times and tides (mean GPS platform
-    # elevation) of the GL3 product; x is the day of December 2022 (UTC)
-    dec1 = datetime.datetime(2022, 12, 1,
-                             tzinfo=datetime.timezone.utc).timestamp()
-    t = (d["t_pass"] - dec1) / 86400.0 + 1.0
+    # elevation) of the GL3 product
+    t = (d["t_pass"] - d["t_pass"].min()) / 86400.0
     eta = d["tide_pass"] - d["tide_pass"].mean()
+    span = float(t.max() - t.min())
 
     # display curve: diurnal + semidiurnal harmonics through the 13 samples
     w1, w2 = 2 * np.pi, 4 * np.pi          # per day
@@ -358,8 +391,16 @@ def panel_c(ax, d):
     rms = float(np.sqrt(np.mean((design(t) @ coef - eta) ** 2)))
     print(f"panel (c) tide harmonics: rms misfit {rms*1000:.0f} mm")
 
-    ts = np.linspace(t.min() - 0.08, t.max() + 0.3, 400)
+    # a small left overhang, and a right one long enough to carry the
+    # curve out under the "tide(t)" label
+    ts = np.linspace(t.min() - 0.031 * span, t.max() + 0.115 * span, 400)
     ax.plot(ts, design(ts) @ coef, color=INK_SOFT, lw=1.2, zorder=1)
+
+    # limits from the data: a small left pad, a wider right pad holding the
+    # curve overhang, the "tide(t)" label and the callout; y symmetric
+    # about zero with headroom for the callout below the mesh
+    x_lo, x_hi = t.min() - 0.11 * span, t.max() + 0.42 * span
+    y_hi = 1.44 * float(np.abs(eta).max())
 
     # all-pairs chords, very light: the network
     n = len(t)
@@ -375,8 +416,9 @@ def panel_c(ax, d):
     # point the callout at the later end of the chord, wherever the pair sits
     ie = ia if t[ia] > t[ja] else ja
     ax.annotate("the pair used in\ndisplacement figure",
-                xy=(t[ie] + 0.03, eta[ie] + 0.01),
-                xytext=(12.45, -0.55), fontsize=8, color=ORANGE, ha="center",
+                xy=(t[ie] + 0.011 * span, eta[ie] + 0.013 * y_hi),
+                xytext=(t[ie] + 0.18 * span, -0.73 * y_hi),
+                fontsize=8, color=ORANGE, ha="center",
                 arrowprops=dict(arrowstyle="->", color=ORANGE, lw=0.9,
                                 shrinkB=2))
     for ti, ei in zip(t, eta):
@@ -389,8 +431,8 @@ def panel_c(ax, d):
     # the panel reads as the estimation concept, not a tide gauge record.
     # The samples ARE the real GL3 pass times and tides; the labels stay
     # general and the ticks stay off.
-    ax.set_xlim(9.3, 13.3)
-    ax.set_ylim(-0.75, 0.75)
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(-y_hi, y_hi)
     ax.set_xticks([]); ax.set_yticks([])
     ax.set_xlabel("time", fontsize=9, color=INK)
     ax.set_ylabel("displacement", fontsize=9, color=INK)
