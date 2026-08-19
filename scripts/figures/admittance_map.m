@@ -132,9 +132,9 @@ gl_drawn = overlay_gl(axm, gis_dir, xy);
 grid(axm,'on'); set(axm, axst{:}); axis(axm,'equal');
 xlabel(axm, sprintf('East of %.4f deg (km)', lon0),'Color',PAL.ink);
 ylabel(axm, sprintf('North of %.4f deg (km)', lat0),'Color',PAL.ink);
-ttl = '(a) Tidal response in map view';
-if gl_drawn, ttl = [ttl ' (black: grounding line)']; end
-title(axm, ttl, 'Color', PAL.ink);
+% no panel title: the (a)/(b) lettering and captions are added separately
+% in the slide or manuscript, same convention as the method schematic
+if gl_drawn, fprintf('map: grounding line drawn in black\n'); end
 colormap(axm, dmap); caxis(axm, [-CLIM CLIM]);
 cb = colorbar(axm);
 set(get(cb,'ylabel'),'string','mm per m of tide (top 100 m)','Color',PAL.ink);
@@ -190,12 +190,11 @@ hp = plot(axp, xg/1e3, pred_mm, '--', 'Color', PAL.expect, 'LineWidth', 2.4);
 grid(axp,'on'); set(axp, axst{:}); xlim(axp,[0 xmax]);
 xlabel(axp,'Along track (km)','Color',PAL.ink);
 ylabel(axp,'mm per m of tide (top 100 m)','Color',PAL.ink);
-title(axp,'(b) Stacked response vs the GPS-curvature prediction','Color',PAL.ink);
+% no panel title and no in-plot ApRES text (the gray band still marks the
+% ApRES value); lettering and captions are added separately
 lg = legend(axp, [hl hs hp], [lb {'stack (4 lines)','GPS a''''(x) prediction'}], ...
   'Location','southoutside','Orientation','horizontal','Interpreter','none');
 set(lg,'TextColor',PAL.ink,'Box','off','FontSize',8);
-text(axp, 0.02*xmax, APRES_MM, ' ApRES (site position unrecorded)', ...
-  'Color', PAL.ink_soft, 'FontSize', 8.5, 'VerticalAlignment','bottom');
 
 print(h, fullfile(out_dir,'EAGER_2022_admittance_map.png'), '-dpng','-r120');
 close(h);
