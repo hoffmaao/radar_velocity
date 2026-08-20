@@ -17,7 +17,8 @@ carried by the caption (by request):
       the two ApRES GA04 estimates (rate method, and the retracted chained
       value kept so the history stays visible), the four calibrated radar
       lines' own blocks nearest that position, and their stack at two bin
-      widths.
+      widths. The four radar lines share one blue with per-line markers -
+      they are one instrument - so orange means ApRES in both panels.
 
 WHY POSITION-MATCHED, AND WHAT CHANGED (19 Aug 2026). The ApRES site
 coordinates were recovered, putting GA04 at 4.70 km along track and only
@@ -39,11 +40,14 @@ HOW FAR TO TRUST THE RADAR END (diagnostics/far_end_check.m):
     radar-free GPS-curvature prediction also rises toward the grounding
     line, reaching about +0.8.
   - the MAGNITUDE is NOT resolved: the same stack gives +2.22 +/- 0.86 at
-    500 m bins and +0.30 +/- 0.43 at 1 km, because the adjacent 4.25 km
-    blocks are negative. The implied gradient (-0.34 to +2.51 over 500 m)
-    is far sharper than the 1-3 km flexure scale, which is not physical
-    for bending. Far-end blocks are also thinner than mid-line ones
-    (valid samples -22%, fitted depth span -21%).
+    500 m bins - interpolated between the 4.25 and 4.75 km bin centres
+    that straddle the site - and +0.30 +/- 0.43 at 1 km, where no centre
+    lies past 4.50 km so the figure is the 4.0-5.0 km bin CONTAINING the
+    site rather than an interpolation. The two differ because the
+    adjacent 4.25 km blocks are negative. The implied gradient (-0.34 to
+    +2.51 over 500 m) is far sharper than the 1-3 km flexure scale, which
+    is not physical for bending. Far-end blocks are also thinner than
+    mid-line ones (valid samples -22%, fitted depth span -21%).
   - the DISAGREEMENT with ApRES survives either binning (4.0 and 3.6
     sigma), so it is not an artefact of the bin choice.
 Both stack rows are drawn for exactly this reason.
@@ -71,7 +75,10 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 # palette: validated project palette (see figure scripts / dataviz notes)
 BLUE = "#2a78d6"; ORANGE = "#eb6834"; AQUA = "#1baf7a"
 YELLOW = "#eda100"; MAGENTA = "#e87ba4"
-INK = "#333333"; INK_SOFT = "#737373"; BAND = "#e6e6e2"
+# ink is pure black: axis labels, tick labels and tick marks all read black,
+# matching the rest of the figure set. INK_SOFT stays for the genuinely
+# recessive elements (the retracted row), which are not axis text.
+INK = "#000000"; INK_SOFT = "#737373"; BAND = "#e6e6e2"
 
 # ---- radar numbers AT THE ApRES SITE, cited from diagnostics/far_end_check.m
 # GA04 projects to 4.70 km along track, 0.07 km off the line (admittance_map.m
@@ -79,15 +86,25 @@ INK = "#333333"; INK_SOFT = "#737373"; BAND = "#e6e6e2"
 # means, which is the whole point: the line mean of a profile running -3.7 to
 # +2.5 is not the quantity a point measurement should be compared with.
 APRES_ALONG_KM = 4.70
+# All four radar rows share the project blue: they are four lines from ONE
+# instrument and do not need four identities. That keeps orange meaning
+# ApRES here as it does in panel (a). The markers stay per-line so the rows
+# remain individually identifiable.
 RADAR_AT_SITE = [               # (label, block km, A [mm/m], sigma, colour, marker)
-    ("GL1", 4.75, +2.51, 1.33, ORANGE,  "s"),
-    ("GL2", 4.70, +3.36, 2.53, AQUA,    "^"),
-    ("GL3", 4.66, +1.51, 1.62, YELLOW,  "D"),
-    ("GL4", 4.65, +4.54, 2.89, MAGENTA, "v"),
+    ("GL1", 4.75, +2.51, 1.33, BLUE, "s"),
+    ("GL2", 4.70, +3.36, 2.53, BLUE, "^"),
+    ("GL3", 4.66, +1.51, 1.62, BLUE, "D"),
+    ("GL4", 4.65, +4.54, 2.89, BLUE, "v"),
 ]
-RADAR_STACK_500 = (+2.22, 0.86)      # inverse-variance stack, 500 m bins
-RADAR_STACK_1KM = (+0.30, 0.43)      # same at 1 km bins - the magnitude is
-                                     # NOT resolved; the sign is
+RADAR_STACK_500 = (+2.22, 0.86)      # inverse-variance stack, 500 m bins,
+                                     # interpolated between the 4.25 and
+                                     # 4.75 km bin centres that straddle
+                                     # the site
+RADAR_STACK_1KM = (+0.30, 0.43)      # same stack at 1 km bins. There is no
+                                     # centre past 4.50 km at that width, so
+                                     # this is the 4.0-5.0 km bin CONTAINING
+                                     # the site, not an interpolation - the
+                                     # magnitude is NOT resolved; the sign is
 MODEL_MID, MODEL_LO, MODEL_HI = -1.23, -2.2, -0.55   # L = 1.5..3 km
 RETRACTED_CHAIN = 3.79               # apres_comparison.py chaining artefact,
                                      # also a GA04 quantity so it belongs here
@@ -165,21 +182,32 @@ def main():
     # pick), the others are context. Identity is carried by colour and told
     # in the caption - the figure itself carries no in-plot text beyond the
     # axis labels, by request.
-    SITES = [("GA04", ORANGE, 0.5, 16),
-             ("GA01", AQUA,   0.3, 12),
+    # GA04 is drawn LAST so the site of record (276 points) is not
+    # overplotted by the context sites
+    SITES = [("GA01", AQUA,   0.3, 12),
              ("GA05", YELLOW, 0.6, 20),
-             ("GA10", MAGENTA, 0.6, 20)]
-    # regress each site once and reuse; a site with no pair products is
+             ("GA10", MAGENTA, 0.6, 20),
+             ("GA04", ORANGE, 0.5, 16)]
+    # regress each site once and reuse; a site that contributes no points is
     # named on stdout, because with no in-plot text a silently missing
-    # colour would leave the caption claiming a series that is not drawn
+    # colour would leave the caption claiming a series that is not drawn.
+    # Missing pair products and pair products that survive no filter are
+    # both ways to draw nothing, so both are reported.
     cats = cats_series()
     fits = {}
     for site, *_ in SITES:
         try:
-            fits[site] = apres_regression(site, cats)
+            fit = apres_regression(site, cats)
         except FileNotFoundError as e:
             print(f"warning: {site} has no pair products ({e.filename}) - "
                   f"absent from panel (a), but still named in the caption")
+            continue
+        if not fit[0]:
+            print(f"warning: {site} has pair products but no pair survives "
+                  f"the dt and tide-rate windows - absent from panel (a), "
+                  f"but still named in the caption")
+            continue
+        fits[site] = fit
     if "GA04" not in fits:
         raise SystemExit("GA04 pair products are required for the fit of record")
     xs, ys, A, se, r2, mx, my = fits["GA04"]
@@ -210,7 +238,7 @@ def main():
     ax1.set_ylabel("ApRES strain rate ($\\mu\\epsilon$ per day)", color=INK)
     for sp in ("top", "right"):
         ax1.spines[sp].set_visible(False)
-    ax1.tick_params(colors=INK_SOFT)
+    ax1.tick_params(colors=INK)
     ax1.grid(alpha=0.18)
 
     # ---- (b) every estimate on one axis ------------------------------
@@ -256,7 +284,7 @@ def main():
                    color=INK)
     for sp in ("top", "right", "left"):
         ax2.spines[sp].set_visible(False)
-    ax2.tick_params(colors=INK_SOFT, left=False)
+    ax2.tick_params(colors=INK, left=False)
     ax2.grid(axis="x", alpha=0.18)
 
     out = os.path.join(ROOT, "figs", "EAGER_2022_convergence.png")

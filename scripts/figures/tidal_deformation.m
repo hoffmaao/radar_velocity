@@ -418,9 +418,6 @@ set(lg,'TextColor',ink,'Box','off');
 % (b) The same correlation in map view - diverging, gray where no response
 ax2 = axes('parent',h,'Position',[0.09 0.07 0.60 0.42]);
 hold(ax2,'on');
-% Local tangent-plane km rather than degrees: at 77.7 S a degree of
-% longitude is ~4.7x shorter than a degree of latitude, so a lon/lat axis
-% would misrepresent both the line spacing and the hinge geometry.
 % EPSG:3031 Antarctic Polar Stereographic, in km - the standard Antarctic
 % frame, and the one the REMA tile and the MEaSUREs grounding line already
 % ship in, so neither overlay needs reprojecting. NOTE at lon ~168 E the

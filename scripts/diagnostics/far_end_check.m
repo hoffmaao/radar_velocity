@@ -19,6 +19,10 @@
 %        thinner, the formal sigma understates the real error.
 %     3. BIN WIDTH: the same stack at 500 m and 1 km. A value that moves
 %        a lot when neighbouring blocks are folded in is not resolved.
+%        4.70 km is only bracketed by bin centres at 500 m (4.25 and
+%        4.75); at 1 km the last centre is 4.50, so the site value there
+%        is the 4.0-5.0 km bin that CONTAINS it, not an interpolation.
+%        Every reported value says which of the two it is.
 %     4. JACKKNIFE: drop each line in turn and restack. If one line
 %        carries the sign, the +2.2 is that line's result, not the array's.
 %
@@ -89,26 +93,47 @@ for w = [0.5 1.0]
       fprintf('   %5.2f km  %+6.2f +/- %.2f\n', xc(k), sm(k), ss(k));
     end
   end
-  v = interp1(xc(isfinite(sm)), sm(isfinite(sm)), APRES_ALONG_KM, 'linear', NaN);
-  e = interp1(xc(isfinite(sm)), ss(isfinite(sm)), APRES_ALONG_KM, 'linear', NaN);
-  fprintf('  at the ApRES site (%.2f km): %+.2f +/- %.2f  -> %.1f sigma from ApRES %.2f\n', ...
-    APRES_ALONG_KM, v, e, abs(v-APRES_MM)/hypot(e,APRES_SE), APRES_MM);
+  [v, e, how] = at_site(xc, sm, ss, APRES_ALONG_KM, w);
+  fprintf('  at the ApRES site (%.2f km): %+.2f +/- %.2f  -> %.1f sigma from ApRES %.2f  [%s]\n', ...
+    APRES_ALONG_KM, v, e, abs(v-APRES_MM)/hypot(e,APRES_SE), APRES_MM, how);
 end
 
 %% 4. Jackknife: does one line carry the far-end sign?
 fprintf('\n=== 4. jackknife of the value at the ApRES site ===\n');
 [xc, sm, ss] = stack(R, 0.5);
-okb = isfinite(sm);
-fprintf('%-14s %+8s %8s\n','dropped','value','sigma');
-fprintf('%-14s %+8.2f %8.2f\n','none (all 4)', ...
-  interp1(xc(okb), sm(okb), APRES_ALONG_KM,'linear',NaN), ...
-  interp1(xc(okb), ss(okb), APRES_ALONG_KM,'linear',NaN));
+fprintf('%-14s %+8s %8s  %s\n','dropped','value','sigma','from');
+[v, e, how] = at_site(xc, sm, ss, APRES_ALONG_KM, 0.5);
+fprintf('%-14s %+8.2f %8.2f  %s\n','none (all 4)', v, e, how);
 for i = 1:numel(R)
   [xj, sj, sjs] = stack(R([1:i-1 i+1:end]), 0.5);
-  okj = isfinite(sj);
-  fprintf('%-14s %+8.2f %8.2f\n', strrep(R(i).name,'EAGER_2022_',''), ...
-    interp1(xj(okj), sj(okj), APRES_ALONG_KM,'linear',NaN), ...
-    interp1(xj(okj), sjs(okj), APRES_ALONG_KM,'linear',NaN));
+  [v, e, how] = at_site(xj, sj, sjs, APRES_ALONG_KM, 0.5);
+  fprintf('%-14s %+8.2f %8.2f  %s\n', strrep(R(i).name,'EAGER_2022_',''), ...
+    v, e, how);
+end
+
+%% ========================================================================
+function [v, e, how] = at_site(xc, sm, ss, x0, w)
+% Stacked value at along-track position x0, and a string saying where it
+% came from. x0 = 4.70 km is only BRACKETED by bin centres at some widths:
+% at w = 0.5 the centres 4.25 and 4.75 straddle it, but at w = 1.0 the last
+% centre is 4.50, and interpolating there would be extrapolation. Rather
+% than emit a silent NaN, fall back to the bin that CONTAINS x0 - it is a
+% coarser answer to the same question, and the caller reports which it got.
+ok = isfinite(sm) & isfinite(ss);
+v = NaN; e = NaN; how = 'no stacked bin at this position';
+if ~any(ok), return; end
+xo = xc(ok); so = sm(ok); eo = ss(ok);
+if numel(xo) >= 2 && x0 >= min(xo) && x0 <= max(xo)
+  v = interp1(xo, so, x0, 'linear');
+  e = interp1(xo, eo, x0, 'linear');
+  how = 'interpolated between bin centres';
+  return;
+end
+[dmin, k] = min(abs(xo - x0));
+if dmin <= w/2
+  v = so(k); e = eo(k);
+  how = sprintf('%.2f-%.2f km bin', xo(k)-w/2, xo(k)+w/2);
+end
 end
 
 %% ========================================================================
@@ -162,8 +187,17 @@ for q = 1:numel(f)
     coh = zeros(Nblk,1); nvalid = zeros(Nblk,1); span = zeros(Nblk,1);
     npair = zeros(Nblk,1);
   end
+  sv = nan(Nblk,1);
+  for b = 1:Nblk
+    d = o.depth_blk(:,b); okd = isfinite(d) & isfinite(o.dh_blk(:,b));
+    if ~any(okd) || max(d(okd)) < REF_DEPTH, continue; end
+    sv(b) = interp1(d(okd), o.dh_blk(okd,b), REF_DEPTH,'linear',NaN)/REF_DEPTH;
+  end
+  if all(~isfinite(sv)), continue; end
   % accumulate quality over EVERY pair used, not just the first file -
-  % a single pair is not representative of the block
+  % a single pair is not representative of the block. Below the sv check,
+  % so these averages describe the same pair set the admittance is
+  % computed from
   for b = 1:Nblk
     d = o.depth_blk(:,b); okd = isfinite(d) & isfinite(o.dh_blk(:,b));
     if ~any(okd), continue; end
@@ -172,13 +206,6 @@ for q = 1:numel(f)
     span(b) = span(b) + (max(d(okd)) - min(d(okd)));
     npair(b) = npair(b) + 1;
   end
-  sv = nan(Nblk,1);
-  for b = 1:Nblk
-    d = o.depth_blk(:,b); okd = isfinite(d) & isfinite(o.dh_blk(:,b));
-    if ~any(okd) || max(d(okd)) < REF_DEPTH, continue; end
-    sv(b) = interp1(d(okd), o.dh_blk(okd,b), REF_DEPTH,'linear',NaN)/REF_DEPTH;
-  end
-  if all(~isfinite(sv)), continue; end
   if isempty(D), D = sv; else, D(:,end+1) = sv; end %#ok<AGROW>
   P(end+1,:) = [str2double(tok{1}), str2double(tok{2})]; %#ok<AGROW>
   W(end+1) = max(mean(o.coh_blk(:),'omitnan'),1e-3); %#ok<AGROW>

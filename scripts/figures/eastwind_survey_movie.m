@@ -115,9 +115,9 @@ fprintf('mean tide range %.3f m; max spread across the array %.3f m\n', ...
   max(tide)-min(tide), spread);
 
 %% Context layers: grounding line and LIMA imagery
-% The MEaSUREs grounding line ships in EPSG:3031 metres, and so does LIMA, so
-% the inset works natively in that grid and only the main panel needs the
-% conversion into the local tangent frame.
+% The MEaSUREs grounding line ships in EPSG:3031 metres, and so does LIMA, and
+% the main panel is now in that same grid, so both layers are used as-is - no
+% lat/lon round trip, no resampling.
 [gx_km, gy_km] = deal([], []);
 try
   S = shaperead(GL_SHP);

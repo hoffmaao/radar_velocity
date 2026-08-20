@@ -24,9 +24,12 @@
 %   map, with GA04 - the only site whose tidal admittance is trustworthy,
 %   GA01's tracked bed drifts 81 m - placed at its OWN along-track
 %   position in panel (b) instead of the band across the axis that the
-%   unknown position used to force. GA04 projects to ~4.4 km along, 0.6 km
+%   unknown position used to force. GA04 projects to 4.70 km along, 0.07 km
 %   OFF the line, i.e. in the grounding-line approach rather than on the
-%   flat floating section the earlier write-up assumed.
+%   flat floating section the earlier write-up assumed. Those numbers come
+%   from apres_along() below, which projects each site onto the per-block
+%   track; approximating the line by its bounding-box diagonal instead was
+%   wrong by up to 0.3 km along and 0.5 km across.
 %
 %   Run on the server (needs CSARP_vvel_net):
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../admittance_map.m')"
@@ -67,7 +70,7 @@ PAL.cat_mk = {'o','s','^','d','v'};
 % ink is pure black: axis labels, tick labels and axis lines all read black
 PAL.ink = [0 0 0]; PAL.ink_soft = [0.45 0.45 0.45];
 PAL.div_neg = [0.698 0.094 0.169]; PAL.div_mid = [0.941 0.937 0.925];
-PAL.div_pos = [0.165 0.471 0.839]; PAL.band = [0.90 0.90 0.88];
+PAL.div_pos = [0.165 0.471 0.839];
 PAL.expect = [0.35 0.35 0.35];
 
 %% Per-block network admittance + GPS a(x) for every line
@@ -226,12 +229,13 @@ end
 % ApRES site's own along-track position. Before the sites were located
 % (19 Aug 2026) the only available comparison was ApRES against the radar
 % LINE MEAN, which is a different quantity wherever the profile varies.
+% A site past the last stacked bin centre cannot be interpolated to; report
+% the bin that contains it instead of a silent NaN, and say which was used.
 for q = 1:numel(AP)
   if ~isfinite(AP(q).along), continue; end
-  v = interp1(xc(okb), sm(okb), AP(q).along/1e3, 'linear', NaN);
-  e = interp1(xc(okb), ss(okb), AP(q).along/1e3, 'linear', NaN);
-  fprintf('radar stack at %-5s (%.2f km along, %.2f km off): %+.2f +/- %.2f mm/m\n', ...
-    AP(q).name, AP(q).along/1e3, AP(q).off/1e3, v, e);
+  [v, e, how] = at_site(xc, sm, ss, AP(q).along/1e3, 0.5);
+  fprintf('radar stack at %-5s (%.2f km along, %.2f km off): %+.2f +/- %.2f mm/m  [%s]\n', ...
+    AP(q).name, AP(q).along/1e3, AP(q).off/1e3, v, e, how);
 end
 he = errbars(axp, xc(okb), sm(okb), ss(okb), PAL.ink);
 hs = plot(axp, xc(okb), sm(okb), 'o', 'MarkerSize', 9, 'MarkerFaceColor', PAL.ink, ...
@@ -256,8 +260,9 @@ end
 grid(axp,'on'); set(axp, axst{:}); xlim(axp,[0 xmax]);
 xlabel(axp,'Along track (km)','Color',PAL.ink);
 ylabel(axp,'mm per m of tide (top 100 m)','Color',PAL.ink);
-% no panel title and no in-plot ApRES text (the gray band still marks the
-% ApRES value); lettering and captions are added separately
+% no panel title and no in-plot ApRES text: the ApRES value is the point
+% and error bar at its own along-track position, and the legend names it;
+% lettering and captions are added separately
 leg_h = [hl hs hp]; leg_l = [lb {'stack (4 lines)','GPS a''''(x) prediction'}];
 if ~isempty(ha)
   leg_h(end+1) = ha; leg_l{end+1} = 'ApRES GA04';
@@ -334,6 +339,29 @@ S = struct('name',pn,'along',along,'lat',lat,'lon',lon, ...
   'adm', 1e3*REF_DEPTH*A.admittance(:), ...
   'adm_std', 1e3*REF_DEPTH*A.admittance_std(:), ...
   'ax_gps', ax_gps, 'calib', true);
+end
+
+%% ========================================================================
+function [v, e, how] = at_site(xc, sm, ss, x0, w)
+% Stacked value at along-track position x0, and a string saying where it
+% came from. Interpolation is only defined between the first and last bin
+% centre that carry a stack; a site outside that range - the far-end sites
+% especially - falls back to the bin that CONTAINS it rather than to NaN.
+ok = isfinite(sm) & isfinite(ss);
+v = NaN; e = NaN; how = 'no stacked bin at this position';
+if ~any(ok), return; end
+xo = xc(ok); so = sm(ok); eo = ss(ok);
+if numel(xo) >= 2 && x0 >= min(xo) && x0 <= max(xo)
+  v = interp1(xo, so, x0, 'linear');
+  e = interp1(xo, eo, x0, 'linear');
+  how = 'interpolated between bin centres';
+  return;
+end
+[dmin, k] = min(abs(xo - x0));
+if dmin <= w/2
+  v = so(k); e = eo(k);
+  how = sprintf('%.2f-%.2f km bin', xo(k)-w/2, xo(k)+w/2);
+end
 end
 
 %% ========================================================================
