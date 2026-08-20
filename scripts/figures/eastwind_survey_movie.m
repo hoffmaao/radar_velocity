@@ -36,9 +36,7 @@
 TMD_DIR   = '/kucresis/scratch/hoffmana_sta/scripts/TMD';
 GIS_DIR   = '/kucresis/scratch/hoffmana_sta/vvel/gis';
 GL_SHP    = fullfile(GIS_DIR,'GroundingLine_Antarctica_v02.shp');
-LIMA_TIF  = fullfile(GIS_DIR,'lima','tiff_90pct','00000-20080319-092059124.tif');
 % REMA v2 mosaic hillshade (10 m browse, tile 17_33, EPSG:3031) under the
-% survey map; the 240 m LIMA stays for the continent locator inset only
 REMA_TIF  = fullfile(GIS_DIR,'rema','17_33_10m_v2.0_browse.tif');
 CATS      = fullfile(TMD_DIR,'usapdc_601772','CATS2008_v2023.nc');
 MP_DIR    = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
@@ -47,9 +45,8 @@ PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
 
 STEP_MIN  = 3;      % [min] animation time step
-FPS       = 16;     % was 40; 2.5x slower playback, same frames
+FPS       = 24;     % 40 -> 16 (2.5x slower) -> 24 (1.5x faster again)
 N_TIDE_PT = 12;     % points across the array that the mean tide averages over
-LIMA_DEC  = 20;     % decimation when reading LIMA for the continent inset
 ZOOM_OUT  = 1.15;   % how far to pull the map back from the survey extent
 
 addpath(TMD_DIR);
@@ -89,8 +86,8 @@ fprintf('window %s to %s UTC (%.2f days)\n', ...
 %% Local map frame, equal scale
 alllat = [P.lat]; alllon = [P.lon];
 % EPSG:3031 Antarctic Polar Stereographic, in km - the standard Antarctic
-% frame, and the one the REMA tile, the LIMA inset and the MEaSUREs
-% grounding line all already ship in. NOTE at lon ~168 E the 3031 grid
+% frame, and the one the REMA tile and the MEaSUREs grounding line
+% already ship in. NOTE at lon ~168 E the 3031 grid
 % runs ~168 deg from local north, so north points roughly DOWN on the map
 % panel.
 lat0 = mean(alllat,'omitnan'); lon0 = mean(alllon,'omitnan');
@@ -114,8 +111,8 @@ spread = max(max(Z,[],1) - min(Z,[],1));
 fprintf('mean tide range %.3f m; max spread across the array %.3f m\n', ...
   max(tide)-min(tide), spread);
 
-%% Context layers: grounding line and LIMA imagery
-% The MEaSUREs grounding line ships in EPSG:3031 metres, and so does LIMA, and
+%% Context layers: grounding line
+% The MEaSUREs grounding line ships in EPSG:3031 metres, and
 % the main panel is now in that same grid, so both layers are used as-is - no
 % lat/lon round trip, no resampling.
 [gx_km, gy_km] = deal([], []);
@@ -133,28 +130,6 @@ try
     sum(isfinite(GX)), nnz(near & isfinite(gx_km)));
 catch ME
   fprintf('grounding line unavailable (%s)\n', ME.message);
-end
-
-% Survey extent in EPSG:3031, and the whole continent from LIMA, decimated,
-% for a small locator inset. The point of the inset is "where in Antarctica",
-% so it is continent scale rather than a regional view.
-[aoi_x, aoi_y] = projfwd(projcrs(3031), alllat, alllon);
-aoi_x = aoi_x/1e3; aoi_y = aoi_y/1e3;   % km, EPSG:3031
-[cx, cy] = projfwd(projcrs(3031), lat0, lon0);
-lima_ok = false;
-try
-  ginfo = geotiffinfo(LIMA_TIF);
-  px = abs(ginfo.PixelScale(1));
-  x_min = ginfo.BoundingBox(1,1); y_max = ginfo.BoundingBox(2,2);
-  IM = imread(LIMA_TIF, 'PixelRegion', ...
-    {[1 LIMA_DEC ginfo.Height],[1 LIMA_DEC ginfo.Width]});
-  lima_x = (x_min + [0 ginfo.Width-1]*px)/1e3;    % km, EPSG:3031
-  lima_y = (y_max - [0 ginfo.Height-1]*px)/1e3;
-  lima_ok = true;
-  fprintf('LIMA continent inset %d x %d px (decimated %dx)\n', ...
-    size(IM,1), size(IM,2), LIMA_DEC);
-catch ME
-  fprintf('LIMA unavailable (%s)\n', ME.message);
 end
 
 %% Figure: build every graphics object ONCE, then only update data
@@ -239,46 +214,43 @@ if rema_underlay(axM, REMA_TIF)
   grid(axM, 'off');
 end
 
-% LIMA context inset, inside the bottom panel so the two panel positions
-% the user specified are untouched. Static: it never updates per frame.
-if lima_ok
-  % Small locator tucked into the bottom left of the map panel, so the figure
-  % stays two panels rather than three.
-  % TOP-right corner of the map panel. It used to sit bottom-right, which
-  % was clear in the old north-up tangent frame; in EPSG:3031 the view is
-  % rotated ~168 deg and the grounding line now runs through that corner,
-  % so the locator moved to the top-right, which the tracks and the
-  % grounding line both leave empty.
-  axI = axes('parent',h,'Position',[axM_pos(1)+axM_pos(3)-0.113, ...
-    axM_pos(2)+axM_pos(4)-0.113, 0.105, 0.105]);
-  image(axI, lima_x, lima_y, IM);
-  set(axI,'YDir','normal'); hold(axI,'on'); axis(axI,'equal');
-  % AOI bounding box rather than a point marker.
-  %
-  % HONESTY ABOUT THE SCALE: the survey is about 5 km across and this inset
-  % spans the whole continent, roughly 5500 km, so a true-scale box would be
-  % about a thousandth of the panel - well under one pixel, and invisible.
-  % The box is therefore grown to a minimum on-screen size. It marks WHERE
-  % the survey is, not how big it is; the main panel carries the real
-  % extent, and the box is deliberately square so nobody reads its shape as
-  % the survey's footprint.
-  % The inset spans ~5500 km in ~130 px, so about 42 km per pixel: a 200 km
-  % box came out 5 px and read as a dot. 350 km is ~8 px, which reads as a
-  % square outline, and is still a small fraction of the continent.
-  MIN_BOX_KM = 350;
-  bx0 = mean([min(aoi_x) max(aoi_x)]); by0 = mean([min(aoi_y) max(aoi_y)]);
-  bhw = max((max(aoi_x)-min(aoi_x))/2, MIN_BOX_KM/2);
-  bhh = max((max(aoi_y)-min(aoi_y))/2, MIN_BOX_KM/2);
-  bhw = max(bhw, bhh); bhh = bhw;
-  box_x = bx0 + [-bhw  bhw bhw -bhw -bhw];
-  box_y = by0 + [-bhh -bhh bhh  bhh -bhh];
-  % White underlay first: LIMA is bright in places and dark in others, so a
-  % single-colour outline is not reliably legible on its own
-  plot(axI, box_x, box_y, '-', 'Color', 'w', 'LineWidth', 3.0);
-  plot(axI, box_x, box_y, '-', 'Color', hot, 'LineWidth', 1.6);
-  xlim(axI, sort(lima_x)); ylim(axI, sort(lima_y));
-  set(axI,'XTick',[],'YTick',[],'Box','on','XColor',ink,'YColor',ink,'LineWidth',1);
+% Locator inset, inside the bottom panel so the figure stays two panels.
+% Static: it never updates per frame.
+%
+% THIS USED TO BE THE WHOLE CONTINENT with a box inflated to 350 km,
+% because a true-scale 5 km box on a 5500 km frame is under one pixel. The
+% comment there was honest about the inflation, but the figure still
+% answered "where is this?" with a box a hundred times too big. Continent
+% scale now lives in survey_locator.m, which does the full zoom in
+% true-scale steps; what belongs in a movie frame is the step where a
+% TRUE-SCALE box is actually legible. Over a 30 km neighbourhood the
+% movie's own extent is about a fifth of the inset, so no inflation is
+% needed and the box means exactly what it looks like.
+%
+% Top-right corner of the map panel: under the EPSG:3031 rotation the
+% tracks and the grounding line both leave that corner empty.
+INSET_KM = 30;    % must match LOCAL_KM in survey_locator.m, whose panel
+                  % (c) is this same view
+axI = axes('parent',h,'Position',[axM_pos(1)+axM_pos(3)-0.113, ...
+  axM_pos(2)+axM_pos(4)-0.113, 0.105, 0.105]);
+hold(axI,'on');
+icx = (min(sx_km)+max(sx_km))/2; icy = (min(sy_km)+max(sy_km))/2;
+xlim(axI, icx + INSET_KM/2*[-1 1]); ylim(axI, icy + INSET_KM/2*[-1 1]);
+rema_underlay(axI, REMA_TIF);
+if ~isempty(gx_km) && any(isfinite(gx_km))
+  plot(axI, gx_km, gy_km, '-', 'Color', [0.10 0.10 0.10], 'LineWidth', 1.2);
 end
+% the movie's own map extent, TRUE SCALE. White underlay so it reads on
+% both bright and dark hillshade.
+bx = [mx-half_x, mx+half_x, mx+half_x, mx-half_x, mx-half_x];
+by = [my-half_y, my-half_y, my+half_y, my+half_y, my-half_y];
+plot(axI, bx, by, '-', 'Color','w', 'LineWidth', 3.0);
+plot(axI, bx, by, '-', 'Color', hot, 'LineWidth', 1.6);
+xlim(axI, icx + INSET_KM/2*[-1 1]); ylim(axI, icy + INSET_KM/2*[-1 1]);
+set(axI,'DataAspectRatio',[1 1 1],'XTick',[],'YTick',[],'Box','on', ...
+  'XColor',ink,'YColor',ink,'LineWidth',1);
+fprintf('inset: %.0f km neighbourhood, extent box %.0f%% of frame\n', ...
+  INSET_KM, 100*2*half_y/INSET_KM);
 
 %% Render
 % PREVIEW_ONLY writes ONE frame as a png and stops, for checking layout and
