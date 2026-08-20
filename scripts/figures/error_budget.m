@@ -64,7 +64,7 @@ N_ALLLEGS   = 50;     % traverses an all-legs combine_passes rebuild would give
 
 PAL.cat = [0.165 0.471 0.839; 0.922 0.408 0.204; 0.106 0.686 0.478; ...
            0.929 0.631 0.000; 0.910 0.482 0.643];
-PAL.ink = [0.20 0.20 0.20]; PAL.ink_soft = [0.45 0.45 0.45];
+PAL.ink = [0 0 0]; PAL.ink_soft = [0.45 0.45 0.45];
 PAL.band = [0.90 0.90 0.88]; PAL.expect = [0.35 0.35 0.35];
 
 %% Rebuild the network result
@@ -140,7 +140,7 @@ fprintf('  ApRES signal (rate method)    %6.2f\n', SIG_APRES);
 %% Figure
 h = figure('Visible','off','Position',[100 100 1120 880],'Color','w');
 set(0,'CurrentFigure',h);
-axst = {'GridAlpha',0.15,'XColor',PAL.ink_soft,'YColor',PAL.ink_soft,'Box','off'};
+axst = {'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off'};
 
 % (a) budget
 ax1 = axes('parent',h,'Position',[0.20 0.585 0.30 0.345]);

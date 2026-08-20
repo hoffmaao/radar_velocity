@@ -102,7 +102,7 @@ PAL.cat = [0.165 0.471 0.839;    % #2a78d6 blue
            0.929 0.631 0.000;    % #eda100 yellow
            0.910 0.482 0.643];   % #e87ba4 magenta
 PAL.cat_mk  = {'o','s','^','d','v'};
-PAL.ink      = [0.20 0.20 0.20];
+PAL.ink      = [0 0 0];
 PAL.ink_soft = [0.45 0.45 0.45];
 PAL.band     = [0.90 0.90 0.88];
 PAL.expect   = [0.35 0.35 0.35];
@@ -161,7 +161,7 @@ fprintf('\nFloor / expected ratio at %.0f m: tidal %.1fx, secular %.1fx\n', ...
 %% Figure
 h = figure('Visible','off','Position',[100 100 1020 1180],'Color','w');
 set(0,'CurrentFigure',h);
-axstyle = {'GridAlpha',0.15,'XColor',PAL.ink_soft,'YColor',PAL.ink_soft,'Box','off'};
+axstyle = {'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off'};
 
 % (a) tidal squeeze against depth
 ax1 = axes('parent',h,'Position',[0.10 0.720 0.60 0.225]);

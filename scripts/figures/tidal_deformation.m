@@ -96,7 +96,7 @@ PAL.cat_mk  = {'o','s','^','d','v'};
 PAL.div_neg = [0.698 0.094 0.169];   % red pole:  strain falls as the tide rises
 PAL.div_mid = [0.941 0.937 0.925];   % neutral gray midpoint
 PAL.div_pos = [0.165 0.471 0.839];   % blue pole: strain rises with the tide
-PAL.ink      = [0.20 0.20 0.20];
+PAL.ink      = [0 0 0];      % axis labels, tick labels, axis lines
 PAL.ink_soft = [0.45 0.45 0.45];
 
 %% Analyse every line
@@ -305,7 +305,7 @@ depth_col = {PAL.cat(1,:), PAL.cat(2,:)};
 depth_mk  = {'o','s'};
 
 h = figure('Visible','off','Position',[100 100 950 1180],'Color','w');
-axstyle = {'GridAlpha',0.15,'XColor',ink_soft,'YColor',ink_soft,'Box','off'};
+axstyle = {'GridAlpha',0.15,'XColor',ink,'YColor',ink,'Box','off'};
 
 ax1 = axes('parent',h,'Position',[0.10 0.775 0.73 0.175]);
 plot(ax1, R.t_days, R.tide, '-', 'Color', ink_soft, 'LineWidth', 1.5); hold(ax1,'on');
@@ -331,7 +331,7 @@ title(ax2,'Vertical strain of the column, relative to the main pass','Color',ink
 cb = colorbar(ax2,'Position',[0.855 0.535 0.020 0.175]);
 colormap(ax2, cmap); caxis(ax2, [R.along(1) R.along(end)]/1e3);
 set(get(cb,'ylabel'),'string','Along track (km)','Color',ink);
-set(cb,'XColor',ink_soft,'YColor',ink_soft);
+set(cb,'XColor',ink,'YColor',ink);
 
 % Detrended: the secular term b*t of the joint fit is removed from each
 % block's series before plotting, so the line drawn IS the admittance and
@@ -384,7 +384,7 @@ end
 %% ========================================================================
 function plot_summary_figure(res, REF_DEPTHS, j, MIN_OBS, PAL, out_dir, gis_dir, suffix)
 ink = PAL.ink; ink_soft = PAL.ink_soft;
-axstyle = {'GridAlpha',0.15,'XColor',ink_soft,'YColor',ink_soft,'Box','off'};
+axstyle = {'GridAlpha',0.15,'XColor',ink,'YColor',ink,'Box','off'};
 
 h = figure('Visible','off','Position',[100 100 980 900],'Color','w');
 
@@ -421,9 +421,12 @@ hold(ax2,'on');
 % Local tangent-plane km rather than degrees: at 77.7 S a degree of
 % longitude is ~4.7x shorter than a degree of latitude, so a lon/lat axis
 % would misrepresent both the line spacing and the hinge geometry.
-lat0 = mean(cellfun(@(v) mean(v,'omitnan'), {res.lat}));
-lon0 = mean(cellfun(@(v) mean(v,'omitnan'), {res.lon}));
-xy = @(lon,lat) deal((lon-lon0)*111320*cosd(lat0)/1e3, (lat-lat0)*110540/1e3);
+% EPSG:3031 Antarctic Polar Stereographic, in km - the standard Antarctic
+% frame, and the one the REMA tile and the MEaSUREs grounding line already
+% ship in, so neither overlay needs reprojecting. NOTE at lon ~168 E the
+% 3031 grid runs ~168 deg from local north, so north points roughly DOWN
+% in this view.
+ps = projcrs(3031);
 
 ndiv = 256; half = round(ndiv/2);
 dmap = [interp1([0 1],[PAL.div_neg; PAL.div_mid], linspace(0,1,half)); ...
@@ -433,7 +436,7 @@ for i = 1:numel(res)
   R = res(i);
   mk = PAL.cat_mk{mod(i-1,numel(PAL.cat_mk))+1};
   ok = isfinite(R.rp(:,j));
-  [xk, yk] = xy(R.lon, R.lat);
+  [xk, yk] = ps_km(ps, R.lon, R.lat);
   hTrk(i) = plot(ax2, xk(ok), yk(ok), '-', 'Color', [0.85 0.85 0.85], 'LineWidth', 0.5);
   for b = 1:R.Nblk
     if ~isfinite(R.rp(b,j)), continue; end
@@ -442,7 +445,7 @@ for i = 1:numel(res)
       'MarkerFaceColor', dmap(ci,:), 'MarkerEdgeColor', ink_soft, 'LineWidth', 0.5);
   end
   if isfinite(R.lonc)
-    [xc2, yc2] = xy(R.lonc, R.latc);
+    [xc2, yc2] = ps_km(ps, R.lonc, R.latc);
     plot(ax2, xc2, yc2, 'p', 'MarkerSize', 17, 'MarkerFaceColor', 'w', ...
       'MarkerEdgeColor', ink, 'LineWidth', 1.5);
   end
@@ -451,10 +454,10 @@ end
 % Grounding zone last: it needs the axis limits the survey markers set, so
 % that it can be clipped to this window instead of dragging the limits out
 % to the whole continent.
-gz_drawn = overlay_grounding(ax2, gis_dir, xy);
+gz_drawn = overlay_grounding(ax2, gis_dir, ps);
 grid(ax2,'on'); set(ax2, axstyle{:}); axis(ax2,'equal');
-xlabel(ax2, sprintf('East of %.4f deg (km)', lon0),'Color',ink);
-ylabel(ax2, sprintf('North of %.4f deg (km)', lat0),'Color',ink);
+xlabel(ax2, 'Polar stereographic x (km, EPSG:3031)','Color',ink);
+ylabel(ax2, 'Polar stereographic y (km, EPSG:3031)','Color',ink);
 if gz_drawn
   title(ax2,'Map view, equal scale - stars mark the sign change, black line the grounding zone','Color',ink);
 else
@@ -463,12 +466,12 @@ end
 colormap(ax2, dmap); caxis(ax2,[-1 1]);
 cb = colorbar(ax2,'Position',[0.715 0.07 0.020 0.42]);
 set(get(cb,'ylabel'),'string','Partial corr. of strain with tide','Color',ink);
-set(cb,'XColor',ink_soft,'YColor',ink_soft);
+set(cb,'XColor',ink,'YColor',ink);
 
 % REMA v2 hillshade (10 m browse, tile 17_33) under everything, drawn last
 % so the axis limits are final. Tracks flip to white: light gray
 % disappears on the hillshade.
-if rema_underlay(ax2, fullfile(gis_dir,'rema','17_33_10m_v2.0_browse.tif'), lat0, lon0)
+if rema_underlay(ax2, fullfile(gis_dir,'rema','17_33_10m_v2.0_browse.tif'))
   set(hTrk, 'Color', 'w', 'LineWidth', 0.7);
   grid(ax2, 'off');
 end
@@ -480,15 +483,21 @@ fprintf('\nWrote %s\n', out_fn);
 end
 
 %% ========================================================================
-function ok = rema_underlay(ax, tif, lat0, lon0)
-%REMA_UNDERLAY Resample the REMA v2 hillshade under a tangent-plane axes.
-%   The axes' current xlim/ylim (km east/north of lon0/lat0) define the
-%   region. The EPSG:3031 raster is inverse-mapped onto that grid (the
-%   tangent frame is rotated ~12 deg against the 3031 grid here, so the
-%   image cannot just be dropped in), lifted into a light gray range so
-%   the data drawn on top stays dominant, and pushed to the bottom of the
-%   draw order. The sampled region is padded 8% beyond the limits so a
-%   small later limit adjustment does not expose white strips. Returns
+function [xk, yk] = ps_km(ps, lon, lat)
+%PS_KM Project lon/lat to EPSG:3031 Antarctic Polar Stereographic, in km.
+[x, y] = projfwd(ps, lat, lon);
+xk = x/1e3; yk = y/1e3;
+end
+
+%% ========================================================================
+function ok = rema_underlay(ax, tif)
+%REMA_UNDERLAY Draw the REMA v2 hillshade under an EPSG:3031 axes in km.
+%   The axes are already in the raster's own projection, so the block
+%   covering the current view is read and dropped straight in - no
+%   resampling, no rotation, no reprojection. It is lifted into a light
+%   gray range so the data drawn on top stays dominant, and pushed to the
+%   bottom of the draw order. The block is padded 8% beyond the limits so
+%   a small later limit adjustment does not expose white strips. Returns
 %   false (with a message) when the tile is missing or unreadable, and
 %   the figure then renders exactly as it did without imagery.
 %
@@ -502,59 +511,53 @@ if ~exist(tif,'file')
 end
 try
   R3 = georasterinfo(tif).RasterReference;
-  xl = xlim(ax); yl = ylim(ax);
-  xpad = 0.08*diff(xl); ypad = 0.08*diff(yl);
-  xg = [xl(1)-xpad, xl(2)+xpad]; yg = [yl(1)-ypad, yl(2)+ypad];
-  nq = 1200;
-  [XK, YK] = meshgrid(linspace(xg(1), xg(2), nq), linspace(yg(1), yg(2), nq));
-  LAT = lat0 + YK*1e3/110540;
-  LON = lon0 + XK*1e3./(111320*cosd(lat0));
-  [XM, YM] = projfwd(projcrs(3031), LAT, LON);
+  xl = xlim(ax); yl = ylim(ax);                     % km, EPSG:3031
+  xg = xl + 0.08*diff(xl)*[-1 1];
+  yg = yl + 0.08*diff(yl)*[-1 1];
   px = R3.CellExtentInWorldX;
   py = R3.CellExtentInWorldY;                       % may differ from px
-  c0 = max(1, floor((min(XM(:)) - R3.XWorldLimits(1))/px) - 2);
-  c1 = min(R3.RasterSize(2), ceil((max(XM(:)) - R3.XWorldLimits(1))/px) + 2);
-  r0 = max(1, floor((R3.YWorldLimits(2) - max(YM(:)))/py) - 2);
-  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - min(YM(:)))/py) + 2);
+  c0 = max(1, floor((xg(1)*1e3 - R3.XWorldLimits(1))/px));
+  c1 = min(R3.RasterSize(2), ceil((xg(2)*1e3 - R3.XWorldLimits(1))/px));
+  r0 = max(1, floor((R3.YWorldLimits(2) - yg(2)*1e3)/py));
+  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - yg(1)*1e3)/py));
   if c1 <= c0 || r1 <= r0
     fprintf('REMA tile does not cover this view - no imagery underlay.\n');
     return;
   end
   A = double(imread(tif, 'Index', 1, 'PixelRegion', {[r0 r1],[c0 c1]}));
   A(A == 0) = NaN;                                  % nodata
-  xa = R3.XWorldLimits(1) + ((c0:c1) - 0.5)*px;
-  ya = R3.YWorldLimits(2) - ((r0:r1) - 0.5)*py;     % descending
-  V = interp2(xa, flip(ya(:)), flipud(A), XM, YM, 'linear');
-  vv = sort(V(isfinite(V)));
+  vv = sort(A(isfinite(A)));
   if isempty(vv)
     fprintf('REMA tile is empty over this view - no imagery underlay.\n');
     return;
   end
   lo = vv(max(1,round(0.02*numel(vv)))); hi = vv(round(0.98*numel(vv)));
-  g = min(max((V - lo)/max(hi-lo, 1), 0), 1);
+  g = min(max((A - lo)/max(hi-lo, 1), 0), 1);
   g = 0.58 + 0.40*g;                                % recessive light grays
-  g(~isfinite(V)) = 1;                              % nodata as paper white
-  hImg = image(ax, 'XData', xg, 'YData', yg, 'CData', repmat(g,[1 1 3]));
+  g(~isfinite(A)) = 1;                              % nodata as paper white
+  % cell centres of the block actually read, in km; y descends with row
+  ximg = (R3.XWorldLimits(1) + ([c0 c1] - 0.5)*px)/1e3;
+  yimg = (R3.YWorldLimits(2) - ([r0 r1] - 0.5)*py)/1e3;
+  hImg = image(ax, 'XData', ximg, 'YData', yimg, 'CData', repmat(g,[1 1 3]));
   uistack(hImg, 'bottom');
   xlim(ax, xl); ylim(ax, yl);
   ok = true;
-  fprintf('REMA hillshade underlay: %d x %d px read, %d x %d resampled\n', ...
-    r1-r0+1, c1-c0+1, nq, nq);
+  fprintf('REMA hillshade underlay: %d x %d px, native EPSG:3031\n', ...
+    r1-r0+1, c1-c0+1);
 catch ME
   fprintf('REMA underlay failed (%s) - continuing without imagery.\n', ME.message);
 end
 end
 
 %% ========================================================================
-function drawn = overlay_grounding(ax, gis_dir, xy)
-% Draw whatever grounding-line geometry is in gis_dir, converted into the
-% map's local km frame. Returns false (with a note) when nothing is there,
+function drawn = overlay_grounding(ax, gis_dir, ps)
+% Draw whatever grounding-line geometry is in gis_dir, in EPSG:3031 km. Returns false (with a note) when nothing is there,
 % so the figure still builds before the data has been fetched.
 %
 % Accepts either a .mat holding lat/lon vectors (NaN-separated parts) or a
-% shapefile. MEaSUREs Antarctic Boundaries ships EPSG:3031 metres, so
-% anything that does not look like degrees is inverse-projected from the
-% Antarctic Polar Stereographic grid.
+% shapefile. MEaSUREs Antarctic Boundaries ships EPSG:3031 metres, which
+% is the axes' own frame and so is used as-is; degrees are projected
+% forward instead.
 drawn = false;
 if ~exist(gis_dir,'dir')
   fprintf('No grounding-zone data in %s - skipping that overlay.\n', gis_dir);
@@ -568,7 +571,7 @@ end
 
 fn = fullfile(gis_dir, f(1).name);
 [~,~,ext] = fileparts(fn);
-lat = []; lon = [];
+gx = []; gy = [];
 try
   if strcmpi(ext,'.mat')
     G = load(fn);
@@ -580,6 +583,7 @@ try
       return;
     end
     lat = G.(latf{1})(:); lon = G.(lonf{1})(:);
+    [gx, gy] = ps_km(ps, lon, lat);
   else
     S = shaperead(fn);
     X = []; Y = [];
@@ -588,9 +592,9 @@ try
       Y = [Y; S(k).Y(:); NaN]; %#ok<AGROW>
     end
     if max(abs(X(isfinite(X)))) <= 180 && max(abs(Y(isfinite(Y)))) <= 90
-      lon = X; lat = Y;                       % already degrees
+      [gx, gy] = ps_km(ps, X, Y);             % degrees -> 3031 km
     else
-      [lat, lon] = projinv(projcrs(3031), X, Y);   % EPSG:3031 metres
+      gx = X/1e3; gy = Y/1e3;                 % already EPSG:3031 metres
     end
   end
 catch ME
@@ -598,7 +602,6 @@ catch ME
   return;
 end
 
-[gx, gy] = xy(lon, lat);
 % Keep only what falls near the survey, else the whole continent sets the
 % axis limits
 xl = xlim(ax); yl = ylim(ax);

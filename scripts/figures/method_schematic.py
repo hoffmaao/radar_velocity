@@ -68,7 +68,7 @@ from matplotlib.patches import FancyArrowPatch, Polygon, Rectangle
 
 BLUE = "#2a78d6"; ORANGE = "#eb6834"; AQUA = "#1baf7a"
 YELLOW = "#eda100"; MAGENTA = "#e87ba4"
-INK = "#333333"; INK_SOFT = "#737373"
+INK = "#000000"; INK_SOFT = "#737373"
 ICE = "#eef3f8"; OCEAN = "#cfe3f5"; BED = "#d9cfc0"; LAYER = "#9db8d2"
 
 C_LIGHT = 299792458.0
