@@ -16,17 +16,23 @@ no depth-grid handling.
 Result (2026-08-17):
     GA04: A = -12.4 +/- 0.4 ue per m of tide (-1.24 mm over 100 m), R2=0.75
     GA01: A =  +9.3 +/- 1.0                  (+0.93 mm),            R2=0.27
-GA04 - the only site whose bed pick holds - agrees with the radar and the
-model in sign and magnitude. GA01 is the site with the 82 m bed-pick
-drift and explains a quarter of its variance; it is listed for contrast,
-not used.
+GA04 - the only site whose bed pick holds - agrees in sign and magnitude
+with the flexure model and with the radar LINE MEAN. GA01 is the site
+with the 82 m bed-pick drift and explains a quarter of its variance; it
+is listed for contrast, not used.
+
+That line-mean agreement is NOT a like-for-like comparison. Once the site
+coordinates were recovered (2026-08-19) GA04 landed at 4.70 km along
+track, where the radar reads +2.22 +/- 0.86 - opposite sign, about 4
+sigma. See the ApRES section of README.md, and
+scripts/figures/convergence.py, which compares every estimate at the site
+instead of pooling. The number this script produces is unchanged by that;
+what changed is which radar number it should be set against.
 
 CONCLUSION: the +3.79 was an artefact of the cumulative-chaining analysis
 in apres_comparison.py (bug not yet localised - candidates: sign handling
 in the chain, drift correlated with tide, the shallow grid points the vsr
-fit excludes). Until it is found, THIS number is the ApRES comparison,
-and all three independent estimates agree: ApRES rates, the four-line
-radar network, and thin-plate flexure.
+fit excludes). Until it is found, THIS number is the ApRES comparison.
 
 Run from the repo root: python3 scripts/diagnostics/apres_rate_check.py
 """

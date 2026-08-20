@@ -32,8 +32,9 @@ instruments are compared with one estimator rather than through a chain of
 assumptions, and the result is a PROFILE, not a single number.
 
 The tide is CATS2008 at the survey centroid. The ApRES site coordinates were
-never recorded (GPS was off for the whole deployment), but CATS2008 varies by
-0.002 m across the 5 km survey array, so any nearby point is equivalent.
+recovered on 2026-08-19 (data/gis/eastwind_2022_2023_apres_xy.txt), and the
+centroid remains the right point to predict at: CATS2008 varies by 0.002 m
+across the 5 km survey array, so any nearby point is equivalent.
 
 WHAT IT SHOWS. ApRES and the InSAR measure the same physical quantity, and
 where they overlap in depth the ApRES amplitude is far below the InSAR
