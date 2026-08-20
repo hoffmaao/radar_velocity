@@ -2,7 +2,7 @@
 %
 %   WHY THIS EXISTS. Locating the ApRES sites (19 Aug 2026) put GA04 at
 %   4.70 km along track, in the OUTERMOST stack bin, where the radar
-%   reports +2.20 +/- 0.86 mm per metre of tide against ApRES -1.24 +/-
+%   reports +2.22 +/- 0.86 mm per metre of tide against ApRES -1.24 +/-
 %   0.04. That is a ~4 sigma, opposite-sign disagreement, and it is about
 %   to be drawn in the convergence figure - so the bin carrying it has to
 %   be shown to be worth believing first. The far end is exactly where
