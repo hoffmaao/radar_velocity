@@ -12,17 +12,46 @@ carried by the caption (by request):
       the broken-bed-pick site behaving differently, which is why it is not
       pooled. One GA01 outlier (~430 ue/day) sits above the axis clip.
 
-  (b) every estimate of the tidal response on one axis: the flexure model
-      band (curvature goes as 1/L^2 with L unmeasured), ApRES GA04, the
-      four calibrated radar lines from the network inversion, the pooled
-      radar value, EAGER_2022 (hollow: uncalibrated and non-reproducible,
-      excluded), and the retracted chained-analysis value as its own
-      labelled row so the history stays visible.
+  (b) every estimate of the tidal response AT THE ApRES SITE, on one axis:
+      the flexure model band (curvature goes as 1/L^2 with L unmeasured),
+      the two ApRES GA04 estimates (rate method, and the retracted chained
+      value kept so the history stays visible), the four calibrated radar
+      lines' own blocks nearest that position, and their stack at two bin
+      widths.
 
-Radar numbers are cited constants from diagnostics/line_means.m (network
-products, 2026-08-17); the ApRES regressions are recomputed live from the
-local EAGER_ApRES repo. Built locally in Python - the ApRES data exists
-only on this machine.
+WHY POSITION-MATCHED, AND WHAT CHANGED (19 Aug 2026). The ApRES site
+coordinates were recovered, putting GA04 at 4.70 km along track and only
+0.07 km off the line - i.e. at the GROUNDING-LINE END, not on the flat
+floating section the earlier write-up assumed. This panel used to compare
+ApRES against the radar LINE MEAN (-1.46 +/- 0.55), and they agreed
+nicely. That agreement was an artefact of averaging: the profile runs
+-3.7 to +2.5 mm/m along the line, so its mean is not the quantity a point
+measurement should be compared with. Compared like for like at 4.70 km,
+the radar reads +2.22 +/- 0.86 against ApRES -1.24 +/- 0.04 - opposite
+signs, about 4 sigma apart. The line-mean result is not wrong and is not
+discarded; it is simply a different quantity, and it still appears in the
+strain-rate and error-budget figures.
+
+HOW FAR TO TRUST THE RADAR END (diagnostics/far_end_check.m):
+  - the SIGN is robust: all four lines independently give positive values
+    at 4.65-4.75 km (+1.5 to +4.5), and a jackknife dropping each line in
+    turn leaves +1.94 to +2.64, so no single line carries it. The
+    radar-free GPS-curvature prediction also rises toward the grounding
+    line, reaching about +0.8.
+  - the MAGNITUDE is NOT resolved: the same stack gives +2.22 +/- 0.86 at
+    500 m bins and +0.30 +/- 0.43 at 1 km, because the adjacent 4.25 km
+    blocks are negative. The implied gradient (-0.34 to +2.51 over 500 m)
+    is far sharper than the 1-3 km flexure scale, which is not physical
+    for bending. Far-end blocks are also thinner than mid-line ones
+    (valid samples -22%, fitted depth span -21%).
+  - the DISAGREEMENT with ApRES survives either binning (4.0 and 3.6
+    sigma), so it is not an artefact of the bin choice.
+Both stack rows are drawn for exactly this reason.
+
+Radar numbers are cited constants from diagnostics/far_end_check.m
+(network products, 2026-08-19); the ApRES regressions are recomputed live
+from the local EAGER_ApRES repo. Built locally in Python - the ApRES data
+exists only on this machine.
 
 Run from the repo root:  python3 scripts/figures/convergence.py
 Writes figs/EAGER_2022_convergence.png
@@ -44,17 +73,24 @@ BLUE = "#2a78d6"; ORANGE = "#eb6834"; AQUA = "#1baf7a"
 YELLOW = "#eda100"; MAGENTA = "#e87ba4"
 INK = "#333333"; INK_SOFT = "#737373"; BAND = "#e6e6e2"
 
-# ---- radar numbers, cited from line_means.m (network, 500 m blocks) ----
-RADAR_LINES = [                      # (label, A [mm/m], sigma, colour, marker)
-    ("GL1", -1.21, 0.58, ORANGE,  "s"),
-    ("GL2", -1.01, 0.85, AQUA,    "^"),
-    ("GL3", -2.40, 0.78, YELLOW,  "D"),
-    ("GL4", -1.09, 1.58, MAGENTA, "v"),
+# ---- radar numbers AT THE ApRES SITE, cited from diagnostics/far_end_check.m
+# GA04 projects to 4.70 km along track, 0.07 km off the line (admittance_map.m
+# apres_along). These are the per-line blocks nearest that position - NOT line
+# means, which is the whole point: the line mean of a profile running -3.7 to
+# +2.5 is not the quantity a point measurement should be compared with.
+APRES_ALONG_KM = 4.70
+RADAR_AT_SITE = [               # (label, block km, A [mm/m], sigma, colour, marker)
+    ("GL1", 4.75, +2.51, 1.33, ORANGE,  "s"),
+    ("GL2", 4.70, +3.36, 2.53, AQUA,    "^"),
+    ("GL3", 4.66, +1.51, 1.62, YELLOW,  "D"),
+    ("GL4", 4.65, +4.54, 2.89, MAGENTA, "v"),
 ]
-RADAR_POOLED = (-1.46, 0.55)         # sigma includes the 1.4x build excess
-EAGER = (-4.72, 0.58)                # uncalibrated + non-reproducible
+RADAR_STACK_500 = (+2.22, 0.86)      # inverse-variance stack, 500 m bins
+RADAR_STACK_1KM = (+0.30, 0.43)      # same at 1 km bins - the magnitude is
+                                     # NOT resolved; the sign is
 MODEL_MID, MODEL_LO, MODEL_HI = -1.23, -2.2, -0.55   # L = 1.5..3 km
-RETRACTED_CHAIN = 3.79               # apres_comparison.py chaining artefact
+RETRACTED_CHAIN = 3.79               # apres_comparison.py chaining artefact,
+                                     # also a GA04 quantity so it belongs here
 
 
 _CATS = None
@@ -183,15 +219,16 @@ def main():
     rows.append((y, "flexure model (L = 1.5$-$3 km)", MODEL_MID, None,
                  INK, None, False, False)); y += 1
     rows.append((y, "ApRES GA04, rate method", A_mm, se_mm,
-                 ORANGE, "o", True, False)); y += 1.4
-    for lbl, v, e, c, m in RADAR_LINES:
-        rows.append((y, f"radar {lbl}", v, e, c, m, False, False)); y += 1
-    rows.append((y, "radar pooled (GL1$-$GL4)", RADAR_POOLED[0], RADAR_POOLED[1],
-                 BLUE, "o", True, False)); y += 1.4
-    rows.append((y, "EAGER_2022 (uncalibrated, excluded)", EAGER[0], EAGER[1],
-                 INK_SOFT, "o", False, True)); y += 1.2
-    rows.append((y, "chained ApRES analysis (retracted)", RETRACTED_CHAIN, None,
-                 INK_SOFT, "x", False, False)); y += 1
+                 ORANGE, "o", True, False)); y += 1
+    rows.append((y, "ApRES GA04, chained (retracted)", RETRACTED_CHAIN, None,
+                 INK_SOFT, "x", False, False)); y += 1.4
+    for lbl, km, v, e, c, m in RADAR_AT_SITE:
+        rows.append((y, f"radar {lbl} ({km:.2f} km)", v, e, c, m,
+                     False, False)); y += 1
+    rows.append((y, "radar stack, 500 m bins", RADAR_STACK_500[0],
+                 RADAR_STACK_500[1], BLUE, "o", True, False)); y += 1
+    rows.append((y, "radar stack, 1 km bins", RADAR_STACK_1KM[0],
+                 RADAR_STACK_1KM[1], BLUE, "o", False, True)); y += 1
 
     ax2.axvspan(MODEL_LO, MODEL_HI, color=BAND, zorder=0)
     ax2.axvline(MODEL_MID, color=INK, lw=1.6, ls="--", zorder=1)
@@ -214,7 +251,7 @@ def main():
     ax2.set_yticklabels([r[1] for r in rows], fontsize=9.5, color=INK)
     ax2.invert_yaxis()
     ax2.set_ylim(rows[-1][0] + 0.9, -0.8)
-    ax2.set_xlim(-5.6, 5.0)
+    ax2.set_xlim(-4.2, 7.8)
     ax2.set_xlabel("column thickness change per metre of tide,\ntop 100 m (mm)",
                    color=INK)
     for sp in ("top", "right", "left"):
@@ -226,8 +263,14 @@ def main():
     os.makedirs(os.path.dirname(out), exist_ok=True)
     fig.savefig(out, bbox_inches="tight", facecolor="white")
     print(f"wrote {out}")
-    print(f"ApRES GA04: {A_mm:+.2f} +/- {se_mm:.2f} mm/m (R2={r2:.2f}) | "
-          f"radar pooled {RADAR_POOLED[0]:+.2f} +/- {RADAR_POOLED[1]:.2f} | model {MODEL_MID:+.2f}")
+    d500 = abs(RADAR_STACK_500[0] - A_mm) / math.hypot(RADAR_STACK_500[1], se_mm)
+    d1km = abs(RADAR_STACK_1KM[0] - A_mm) / math.hypot(RADAR_STACK_1KM[1], se_mm)
+    print(f"ApRES GA04: {A_mm:+.2f} +/- {se_mm:.2f} mm/m (R2={r2:.2f}) at "
+          f"{APRES_ALONG_KM:.2f} km along track")
+    print(f"radar at that position: {RADAR_STACK_500[0]:+.2f} +/- "
+          f"{RADAR_STACK_500[1]:.2f} (500 m bins, {d500:.1f} sigma away), "
+          f"{RADAR_STACK_1KM[0]:+.2f} +/- {RADAR_STACK_1KM[1]:.2f} "
+          f"(1 km bins, {d1km:.1f} sigma away)")
 
 
 if __name__ == "__main__":
