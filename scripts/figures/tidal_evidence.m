@@ -63,7 +63,7 @@ if ~exist(out_dir,'dir'), mkdir(out_dir); end
 PAL.cat = [0.165 0.471 0.839; 0.922 0.408 0.204; 0.106 0.686 0.478; ...
            0.929 0.631 0.000; 0.910 0.482 0.643];
 PAL.cat_mk  = {'o','s','^','d','v'};
-PAL.ink      = [0.20 0.20 0.20];
+PAL.ink      = [0 0 0];
 PAL.ink_soft = [0.45 0.45 0.45];
 PAL.band     = [0.90 0.90 0.88];
 PAL.expect   = [0.35 0.35 0.35];
@@ -100,7 +100,7 @@ fprintf('\nfloor %.1f mm per m of tide; ApRES (rate method) -1.24 mm at %d m\n',
 %% Figure
 h = figure('Visible','off','Position',[100 100 1120 940],'Color','w');
 set(0,'CurrentFigure',h);
-axst = {'GridAlpha',0.15,'XColor',PAL.ink_soft,'YColor',PAL.ink_soft,'Box','off'};
+axst = {'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off'};
 
 xmax = 0;
 for i = 1:numel(V3), xmax = max(xmax, max(V3(i).along)/1e3); end

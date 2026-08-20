@@ -177,21 +177,29 @@ product's line mean sits INSIDE that floor for both quantities, at every
 depth. The floor scales as 1/z, from 148 µε/m and 4.3e-2 /yr at 50 m to
 29 µε/m and 8.8e-3 /yr at 250 m.
 
-**Measured independently by ApRES (2026-08-06; corrected 2026-08-17).**
-Phase-sensitive radar was deployed at Windless Bight in the same weeks
-(`~/projects/EAGER_ApRES`, site GA04, 277 half-hour pairs over 5.8 days).
+**Measured independently by ApRES (2026-08-06; corrected 2026-08-17;
+position-matched 2026-08-19).** Phase-sensitive radar was deployed at
+Windless Bight in the same weeks (`~/projects/EAGER_ApRES`; four sites
+carry pair products, and the site of record GA04 has 277 half-hour pairs
+over 5.8 days).
 
 The first comparison (`scripts/diagnostics/apres_comparison.py`) chained
 the per-pair displacement profiles end to end and fitted the cumulative
 series with this project's estimator. It gave +3.79 mm per metre of tide
-at 100 m. **That number is RETRACTED as an analysis artefact**: it is
-opposite in sign to the radar network, the flexure model and the
-rate-method check below, and the cumulative-chaining analysis is the only
-one of the four that disagrees. The bug has not yet been localised -
-candidates are sign handling in the chain, cumulative drift correlated
-with the tide, and the shallow grid points the vsr fit excludes - so the
-chained script is kept, marked RETRACTED and with its CSV export removed,
-for the pending bug hunt.
+at 100 m. **That number is RETRACTED as an analysis artefact.** The
+retraction rests on an internal inconsistency rather than on a vote among
+methods: the chained analysis and the rate-method check below use the
+SAME instrument at the SAME site over the SAME window and give
+incompatible answers, which a bug explains and physics does not. The
+chaining method also has specific known flaws already recorded as leads -
+it integrates per-pair displacements as a random walk, applies iid OLS to
+errors that are autocorrelated by construction, and may double-count.
+Neither of those depends on any radar number, so nothing below changes
+the retraction. The bug has not yet been localised - candidates are sign
+handling in the chain, cumulative drift correlated with the tide, and the
+shallow grid points the vsr fit excludes - so the chained script is kept,
+marked RETRACTED and with its CSV export removed, for the pending bug
+hunt.
 
 The comparison of record is `scripts/diagnostics/apres_rate_check.py`,
 which needs almost no processing of ours: if strain = A*tide then the
@@ -199,19 +207,60 @@ strain RATE of a half-hour pair is A*d(tide)/dt, so regressing the ApRES
 project's own `vsr_per_year_medfilt` against the CATS2008 tide rate gives
 A directly - no chaining, no cumulative drift, no depth-grid handling.
 
-The numbers of record agree in sign and magnitude across three
-independent routes:
+The numbers, over the top 100 m in mm per metre of tide:
 
-- ApRES rate method (GA04): **-1.24 +/- 0.04 mm per metre of tide** over
-  the top 100 m (R2 = 0.75)
-- radar network, pooled over the four calibrated lines:
-  **-1.46 +/- 0.55 mm per metre of tide**
-- thin-plate flexure model: about **-1.2 mm per metre of tide**
+- ApRES rate method (GA04): **-1.24 +/- 0.04** (R2 = 0.75)
+- radar network, pooled over the four calibrated lines: **-1.46 +/- 0.55**
+- thin-plate flexure model: about **-1.2**
+- radar network AT GA04's OWN along-track position: **+2.22 +/- 0.86**
+  (500 m bins) or **+0.30 +/- 0.43** (1 km bins)
 
-Caveats: only GA04 is usable (GA01 and GA05 have bed picks that drift 82
-and 159 m); and no ApRES site coordinates exist anywhere, because GPS was
-off for the whole deployment, so "the same site" means the same few-km
-area rather than a known offset.
+**The ApRES site positions were recovered on 2026-08-19** and are in
+`data/gis/eastwind_2022_2023_apres_xy.txt` (EPSG:3031 metres). That file
+lists exactly the four sites that have pair products - GA01, GA04, GA05,
+GA10 - so it also settles which of the twelve GA sites in
+`data/gis/McM_GNSS_ApRES.txt` are ApRES rather than GNSS. GA04 projects
+to 4.70 km along track and 0.07 km off the line, i.e. into the
+grounding-line approach rather than the flat floating section the earlier
+write-up assumed.
+
+That makes the first three numbers above a comparison of DIFFERENT
+quantities. The radar profile runs -3.7 to +2.5 mm/m along the line, so
+its line mean is not what a point measurement should be compared with,
+and the close -1.24 against -1.46 was an averaging coincidence. Like for
+like at 4.70 km the two are opposite in sign and about 4 sigma apart. The
+pooled line mean is not retracted - it is a different quantity, and it
+still carries the strain-rate and error-budget figures.
+
+**An unexplained coincidence, stated rather than buried.** Locating the
+site also cost the retraction above the sign argument it used to lean on.
+Against the LINE MEAN the retracted +3.79 was the odd one out of four;
+position-matched it is 2-2 - rate method (-1.24) and flexure model (-1.2)
+negative, chained (+3.79) and radar at GA04 (+2.22) positive. So the
+retracted value and the radar at the site share a sign. That is not
+currently understood, and it does NOT rehabilitate the chained profile:
+the radar's far-end MAGNITUDE is itself unresolved (+2.22 +/- 0.86 at
+500 m bins against +0.30 +/- 0.43 in the 1 km bin containing the site,
+per `scripts/diagnostics/far_end_check.m`, below), and the chaining flaws
+above are methodological rather than inferred from any disagreement. It
+is an open question worth revisiting if the chaining bug is ever
+localised.
+
+How much the far-end radar bin can carry is tested before it is drawn, in
+`scripts/diagnostics/far_end_check.m`, and the verdict is deliberately
+split. The SIGN is robust: all four lines are independently positive at
+4.65-4.75 km, a jackknife dropping each line in turn leaves +1.94 to
++2.64, and the radar-free GPS-curvature prediction also rises toward the
+grounding line. The MAGNITUDE is not resolved: +2.22 +/- 0.86 at 500 m
+bins against +0.30 +/- 0.43 at 1 km, because the adjacent 4.25 km blocks
+are negative, and the far blocks are thinner than mid-line ones (valid
+samples -22%, fitted depth span -21%). The disagreement with ApRES
+survives either binning (4.0 and 3.6 sigma), so it is not a bin artefact.
+`scripts/figures/convergence.py` therefore draws both stack rows and
+compares every estimate at the ApRES site rather than pooling.
+
+Caveats: only GA04 is usable - GA01 and GA05 have bed picks that drift 82
+and 159 m, and GA05 and GA10 have only a handful of pairs each.
 
 Advection is not the issue: measured from the per-pass GPS, the ice moves
 0.3-1.2 m between passes, against 500 m blocks - so over a 3-day baseline

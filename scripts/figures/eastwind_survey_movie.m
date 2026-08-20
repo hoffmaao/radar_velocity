@@ -8,6 +8,13 @@
 %     bottom  the radar system position, moving as time advances, over the
 %             three days of surveying
 %
+%   NO PANEL TITLES OR IN-PLOT LABELS: the axis labels carry it, and any
+%   naming belongs in the slide or caption, same convention as the other
+%   figures in this repo. The only text in a frame is the axis labels,
+%   the tick labels and the running timestamp - the timestamp stays
+%   because it is the movie's clock, not a caption (the dated x axis and
+%   the riding marker give the same information more coarsely).
+%
 %   The tide is the MEAN over the array: CATS2008 is predicted at a set of
 %   points spread across the survey footprint and averaged, rather than at a
 %   single centroid. At this site the model is ~4 km resolution against a
@@ -30,6 +37,9 @@ TMD_DIR   = '/kucresis/scratch/hoffmana_sta/scripts/TMD';
 GIS_DIR   = '/kucresis/scratch/hoffmana_sta/vvel/gis';
 GL_SHP    = fullfile(GIS_DIR,'GroundingLine_Antarctica_v02.shp');
 LIMA_TIF  = fullfile(GIS_DIR,'lima','tiff_90pct','00000-20080319-092059124.tif');
+% REMA v2 mosaic hillshade (10 m browse, tile 17_33, EPSG:3031) under the
+% survey map; the 240 m LIMA stays for the continent locator inset only
+REMA_TIF  = fullfile(GIS_DIR,'rema','17_33_10m_v2.0_browse.tif');
 CATS      = fullfile(TMD_DIR,'usapdc_601772','CATS2008_v2023.nc');
 MP_DIR    = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 OUT_DIR   = '/kucresis/scratch/hoffmana_sta/vvel/figures';
@@ -37,7 +47,7 @@ PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
 
 STEP_MIN  = 3;      % [min] animation time step
-FPS       = 40;
+FPS       = 16;     % was 40; 2.5x slower playback, same frames
 N_TIDE_PT = 12;     % points across the array that the mean tide averages over
 LIMA_DEC  = 20;     % decimation when reading LIMA for the continent inset
 ZOOM_OUT  = 1.15;   % how far to pull the map back from the survey extent
@@ -78,9 +88,14 @@ fprintf('window %s to %s UTC (%.2f days)\n', ...
 
 %% Local map frame, equal scale
 alllat = [P.lat]; alllon = [P.lon];
+% EPSG:3031 Antarctic Polar Stereographic, in km - the standard Antarctic
+% frame, and the one the REMA tile, the LIMA inset and the MEaSUREs
+% grounding line all already ship in. NOTE at lon ~168 E the 3031 grid
+% runs ~168 deg from local north, so north points roughly DOWN on the map
+% panel.
 lat0 = mean(alllat,'omitnan'); lon0 = mean(alllon,'omitnan');
-xkm = @(lon) (lon-lon0)*111320*cosd(lat0)/1e3;
-ykm = @(lat) (lat-lat0)*110540/1e3;
+ps = projcrs(3031);
+[sx_km, sy_km] = ps_km(ps, alllon, alllat);      % every survey fix, in km
 
 %% Mean CATS2008 tide over the array
 pad = 0.15*86400;                       % show a little context either side
@@ -100,9 +115,9 @@ fprintf('mean tide range %.3f m; max spread across the array %.3f m\n', ...
   max(tide)-min(tide), spread);
 
 %% Context layers: grounding line and LIMA imagery
-% The MEaSUREs grounding line ships in EPSG:3031 metres, and so does LIMA, so
-% the inset works natively in that grid and only the main panel needs the
-% conversion into the local tangent frame.
+% The MEaSUREs grounding line ships in EPSG:3031 metres, and so does LIMA, and
+% the main panel is now in that same grid, so both layers are used as-is - no
+% lat/lon round trip, no resampling.
 [gx_km, gy_km] = deal([], []);
 try
   S = shaperead(GL_SHP);
@@ -110,9 +125,9 @@ try
   for k = 1:numel(S)
     GX = [GX; S(k).X(:); NaN]; GY = [GY; S(k).Y(:); NaN]; %#ok<AGROW>
   end
-  [glat, glon] = projinv(projcrs(3031), GX, GY);
-  gx_km = xkm(glon); gy_km = ykm(glat);
-  near = ~(gx_km < -20 | gx_km > 20 | gy_km < -20 | gy_km > 20);
+  gx_km = GX/1e3; gy_km = GY/1e3;    % already EPSG:3031 metres
+  near = ~(gx_km < min(sx_km)-20 | gx_km > max(sx_km)+20 | ...
+           gy_km < min(sy_km)-20 | gy_km > max(sy_km)+20);
   gx_km(~near) = NaN; gy_km(~near) = NaN;
   fprintf('grounding line: %d vertices, %d near the survey\n', ...
     sum(isfinite(GX)), nnz(near & isfinite(gx_km)));
@@ -143,12 +158,12 @@ catch ME
 end
 
 %% Figure: build every graphics object ONCE, then only update data
-ink = [0.20 0.20 0.20]; ink_soft = [0.45 0.45 0.45];
+ink = [0 0 0]; ink_soft = [0.45 0.45 0.45];   % ink: all axis text
 accent = [0.165 0.471 0.839];   % #2a78d6
 hot    = [0.922 0.408 0.204];   % #eb6834
 
 h = figure('Visible','off','Position',[100 100 900 900],'Color','w');
-axstyle = {'GridAlpha',0.15,'XColor',ink_soft,'YColor',ink_soft,'Box','off'};
+axstyle = {'GridAlpha',0.15,'XColor',ink,'YColor',ink,'Box','off'};
 
 % Panel positions are literal and never touched again
 % The survey is a narrow NE-SW strip, so under equal aspect a full-width map
@@ -176,7 +191,6 @@ xlim(axT, [tdn(1) tdn(end)]);
 ylim(axT, [min(tide)-0.12, max(tide)+0.30]);   % headroom for the clock
 datetick(axT,'x','mmm dd HH:MM','keeplimits');
 ylabel(axT,'Mean tide over the array (m)','Color',ink);
-title(axT,'CATS2008 tide and EAGER 2022 survey timing','Color',ink);
 % timestamp, top right of the top panel
 hClock = text(axT, 0.985, 0.95, '', 'Units','normalized', ...
   'HorizontalAlignment','right', 'VerticalAlignment','top', ...
@@ -185,13 +199,13 @@ hClock = text(axT, 0.985, 0.95, '', 'Units','normalized', ...
 
 % --- bottom: map
 hold(axM,'on');
+hTrk = gobjects(1, numel(P));
 for k = 1:numel(P)
-  plot(axM, xkm(P(k).lon), ykm(P(k).lat), '-', 'Color', [0.78 0.78 0.78], 'LineWidth', 0.5);
+  [tx, ty] = ps_km(ps, P(k).lon, P(k).lat);
+  hTrk(k) = plot(axM, tx, ty, '-', 'Color', [0.78 0.78 0.78], 'LineWidth', 0.5);
 end
 if ~isempty(gx_km) && any(isfinite(gx_km))
   plot(axM, gx_km, gy_km, '-', 'Color', [0.10 0.10 0.10], 'LineWidth', 2);
-  text(axM, 0.04, 0.985, 'grounding line (MEaSUREs)', 'Units','normalized', ...
-    'VerticalAlignment','top', 'FontSize', 9, 'Color', [0.10 0.10 0.10]);
 end
 hTrail = plot(axM, NaN, NaN, '-', 'Color', accent, 'LineWidth', 2.5);
 hRadar = plot(axM, NaN, NaN, 'o', 'MarkerSize', 13, ...
@@ -200,25 +214,38 @@ hRadar = plot(axM, NaN, NaN, 'o', 'MarkerSize', 13, ...
 % narrow NE-SW strip does not leave the panel half empty. ZOOM_OUT pulls back
 % a little from the survey so the grounding line has room.
 grid(axM,'on'); set(axM, axstyle{:}); axis(axM,'equal');
-mx = mean([min(xkm(alllon)) max(xkm(alllon))]);
-my = mean([min(ykm(alllat)) max(ykm(alllat))]);
-half_y = ZOOM_OUT * max(ykm(alllat) - my);
+mx = (min(sx_km) + max(sx_km))/2;
+my = (min(sy_km) + max(sy_km))/2;
 panel_aspect = (axM_pos(3)*900) / (axM_pos(4)*900);
+% grow whichever axis is short until the view matches the panel aspect, so
+% the whole survey fits however the strip happens to lie in the 3031 grid
+half_y = max(ZOOM_OUT*(max(sy_km)-min(sy_km))/2, ...
+             ZOOM_OUT*(max(sx_km)-min(sx_km))/2 / panel_aspect);
 half_x = half_y * panel_aspect;
 xlim(axM, mx + [-half_x half_x]);
 ylim(axM, my + [-half_y half_y]);
-xlabel(axM, sprintf('East of %.4f deg (km)', lon0),'Color',ink);
-ylabel(axM, sprintf('North of %.4f deg (km)', lat0),'Color',ink);
-hStatus = title(axM,'','Color',ink,'Interpreter','none');
+xlabel(axM, 'Polar stereographic x (km, EPSG:3031)','Color',ink);
+ylabel(axM, 'Polar stereographic y (km, EPSG:3031)','Color',ink);
+
+% REMA hillshade under the map, static, drawn once. Tracks flip to white:
+% light gray disappears on the hillshade.
+if rema_underlay(axM, REMA_TIF)
+  set(hTrk, 'Color', 'w', 'LineWidth', 0.7);
+  grid(axM, 'off');
+end
 
 % LIMA context inset, inside the bottom panel so the two panel positions
 % the user specified are untouched. Static: it never updates per frame.
 if lima_ok
   % Small locator tucked into the bottom left of the map panel, so the figure
   % stays two panels rather than three.
-  % Bottom-right corner of the map panel: the survey occupies the left and
-  % centre, so the locator never sits over the tracks or the moving marker
-  axI = axes('parent',h,'Position',[axM_pos(1)+axM_pos(3)-0.113, axM_pos(2)+0.008, 0.105, 0.105]);
+  % TOP-right corner of the map panel. It used to sit bottom-right, which
+  % was clear in the old north-up tangent frame; in EPSG:3031 the view is
+  % rotated ~168 deg and the grounding line now runs through that corner,
+  % so the locator moved to the top-right, which the tracks and the
+  % grounding line both leave empty.
+  axI = axes('parent',h,'Position',[axM_pos(1)+axM_pos(3)-0.113, ...
+    axM_pos(2)+axM_pos(4)-0.113, 0.105, 0.105]);
   image(axI, lima_x, lima_y, IM);
   set(axI,'YDir','normal'); hold(axI,'on'); axis(axI,'equal');
   % AOI bounding box rather than a point marker.
@@ -246,8 +273,6 @@ if lima_ok
   plot(axI, box_x, box_y, '-', 'Color', hot, 'LineWidth', 1.6);
   xlim(axI, sort(lima_x)); ylim(axI, sort(lima_y));
   set(axI,'XTick',[],'YTick',[],'Box','on','XColor',ink,'YColor',ink,'LineWidth',1);
-  text(axI, 0.5, -0.06, 'LIMA', 'Units','normalized', 'HorizontalAlignment','center', ...
-    'VerticalAlignment','top', 'FontSize', 8, 'Color', ink);
 end
 
 %% Render
@@ -293,16 +318,15 @@ for f = frames
   if isempty(act)
     set(hRadar,'XData',NaN,'YData',NaN);
     set(hTrail,'XData',NaN,'YData',NaN);
-    set(hStatus,'String','radar idle');
   else
     p = P(act);
     la = interp1(p.gps, p.lat, now_t, 'linear');
     lo = interp1(p.gps, p.lon, now_t, 'linear');
-    set(hRadar,'XData',xkm(lo),'YData',ykm(la));
+    [rx, ry] = ps_km(ps, lo, la);
+    set(hRadar,'XData',rx,'YData',ry);
     sel = p.gps <= now_t;
-    set(hTrail,'XData',xkm(p.lon(sel)),'YData',ykm(p.lat(sel)));
-    set(hStatus,'String', sprintf('%s  -  %.0f%% along', p.seg, ...
-      100*nnz(sel)/numel(p.gps)));
+    [trx, try_] = ps_km(ps, p.lon(sel), p.lat(sel));
+    set(hTrail,'XData',trx,'YData',try_);
   end
 
   if PREVIEW_ONLY
@@ -326,4 +350,71 @@ end
 function dn = epoch2dn(t)
 % OPR gps_time is seconds since 1970-01-01
 dn = datenum(1970,1,1) + t/86400;
+end
+
+%% ========================================================================
+function [xk, yk] = ps_km(ps, lon, lat)
+%PS_KM Project lon/lat to EPSG:3031 Antarctic Polar Stereographic, in km.
+[x, y] = projfwd(ps, lat, lon);
+xk = x/1e3; yk = y/1e3;
+end
+
+%% ========================================================================
+function ok = rema_underlay(ax, tif)
+%REMA_UNDERLAY Draw the REMA v2 hillshade under an EPSG:3031 axes in km.
+%   The axes are already in the raster's own projection, so the block
+%   covering the current view is read and dropped straight in - no
+%   resampling, no rotation, no reprojection. It is lifted into a light
+%   gray range so the data drawn on top stays dominant, and pushed to the
+%   bottom of the draw order. The block is padded 8% beyond the limits so
+%   a small later limit adjustment does not expose white strips. Returns
+%   false (with a message) when the tile is missing or unreadable, and
+%   the figure then renders exactly as it did without imagery.
+%
+%   The browse tif is a COG whose overview IFDs make geotiffinfo error
+%   ("multiple images ... sizes are different"), so the georeference comes
+%   from georasterinfo and the pixels from imread on IFD 1.
+ok = false;
+if ~exist(tif,'file')
+  fprintf('REMA hillshade not found (%s) - no imagery underlay.\n', tif);
+  return;
+end
+try
+  R3 = georasterinfo(tif).RasterReference;
+  xl = xlim(ax); yl = ylim(ax);                     % km, EPSG:3031
+  xg = xl + 0.08*diff(xl)*[-1 1];
+  yg = yl + 0.08*diff(yl)*[-1 1];
+  px = R3.CellExtentInWorldX;
+  py = R3.CellExtentInWorldY;                       % may differ from px
+  c0 = max(1, floor((xg(1)*1e3 - R3.XWorldLimits(1))/px));
+  c1 = min(R3.RasterSize(2), ceil((xg(2)*1e3 - R3.XWorldLimits(1))/px));
+  r0 = max(1, floor((R3.YWorldLimits(2) - yg(2)*1e3)/py));
+  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - yg(1)*1e3)/py));
+  if c1 <= c0 || r1 <= r0
+    fprintf('REMA tile does not cover this view - no imagery underlay.\n');
+    return;
+  end
+  A = double(imread(tif, 'Index', 1, 'PixelRegion', {[r0 r1],[c0 c1]}));
+  A(A == 0) = NaN;                                  % nodata
+  vv = sort(A(isfinite(A)));
+  if isempty(vv)
+    fprintf('REMA tile is empty over this view - no imagery underlay.\n');
+    return;
+  end
+  lo = vv(max(1,round(0.02*numel(vv)))); hi = vv(round(0.98*numel(vv)));
+  g = min(max((A - lo)/max(hi-lo, 1), 0), 1);
+  g = 0.58 + 0.40*g;                                % recessive light grays
+  g(~isfinite(A)) = 1;                              % nodata as paper white
+  % cell centres of the block actually read, in km; y descends with row
+  ximg = (R3.XWorldLimits(1) + ([c0 c1] - 0.5)*px)/1e3;
+  yimg = (R3.YWorldLimits(2) - ([r0 r1] - 0.5)*py)/1e3;
+  hImg = image(ax, 'XData', ximg, 'YData', yimg, 'CData', repmat(g,[1 1 3]));
+  uistack(hImg, 'bottom');
+  xlim(ax, xl); ylim(ax, yl);
+  ok = true;
+  fprintf('REMA hillshade underlay: %d x %d px, native EPSG:3031\n', ...
+    r1-r0+1, c1-c0+1);
+catch ME
+  fprintf('REMA underlay failed (%s) - continuing without imagery.\n', ME.message);
+end
 end
