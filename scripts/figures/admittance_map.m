@@ -4,9 +4,11 @@
 %
 %   (a) MAP. Per-block tidal response (mm of column change per metre of
 %       tide, top 100 m, network inversion) for the four calibrated lines,
-%       on the local tangent plane with the MEaSUREs grounding line, over
-%       a REMA v2 10 m hillshade. Diverging colour about zero. This is
-%       where a spatial pattern would show.
+%       in EPSG:3031 Antarctic Polar Stereographic km with the MEaSUREs
+%       grounding line, over a REMA v2 10 m hillshade. Diverging colour
+%       about zero. This is where a spatial pattern would show. Note that
+%       at lon ~168 E the 3031 grid runs ~168 deg from local north, so
+%       north points roughly DOWN in this view.
 %
 %   (b) THE PATTERN TEST. All calibrated lines' per-block responses
 %       against along-track position, with their inverse-variance stack -
@@ -15,9 +17,16 @@
 %       profile, eps_zz = nu/(1-nu) * (H/2) * a''(x) * (1 - z/H), and
 %       a(x) is measured by the GPS with no radar involved. If the ApRES
 %       and radar magnitudes are right, the stacked radar profile should
-%       sit on the GPS-curvature prediction. The ApRES value is drawn as
-%       a band, not a point on the map - its site position was never
-%       recorded (GPS was off for the whole deployment).
+%       sit on the GPS-curvature prediction.
+%
+%   THE ApRES SITE POSITIONS WERE RECOVERED 19 Aug 2026 and the four
+%   sites with pair_results (GA01, GA04, GA05, GA10) are now drawn on the
+%   map, with GA04 - the only site whose tidal admittance is trustworthy,
+%   GA01's tracked bed drifts 81 m - placed at its OWN along-track
+%   position in panel (b) instead of the band across the axis that the
+%   unknown position used to force. GA04 projects to ~4.4 km along, 0.6 km
+%   OFF the line, i.e. in the grounding-line approach rather than on the
+%   flat floating section the earlier write-up assumed.
 %
 %   Run on the server (needs CSARP_vvel_net):
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../admittance_map.m')"
@@ -32,6 +41,11 @@ out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures';
 % REMA v2 mosaic hillshade (10 m browse, tile 17_33, EPSG:3031) as the map
 % background; fetched from the PGC open-data S3 bucket into gis/rema
 rema_tif = fullfile(gis_dir,'rema','17_33_10m_v2.0_browse.tif');
+% ApRES site positions, EPSG:3031 metres (name in column 3). The file
+% lists exactly the four sites that have pair_results - GA01, GA04, GA05,
+% GA10 - so it also identifies which of the twelve GA sites are ApRES
+% rather than GNSS. A copy lives in the repo at data/gis/.
+apres_xy = fullfile(gis_dir,'eastwind_2022_2023_apres_xy.txt');
 
 % EAGER_2022 is deliberately absent: it is the uncalibrated duplicate of
 % GL1 (same physical leg, stale-calibration build, non-reproducible from
@@ -50,7 +64,8 @@ APRES_MM = -1.24; APRES_SE = 0.04;    % rate method, apres_rate_check.py
 PAL.cat = [0.165 0.471 0.839; 0.922 0.408 0.204; 0.106 0.686 0.478; ...
            0.929 0.631 0.000; 0.910 0.482 0.643];
 PAL.cat_mk = {'o','s','^','d','v'};
-PAL.ink = [0.20 0.20 0.20]; PAL.ink_soft = [0.45 0.45 0.45];
+% ink is pure black: axis labels, tick labels and axis lines all read black
+PAL.ink = [0 0 0]; PAL.ink_soft = [0.45 0.45 0.45];
 PAL.div_neg = [0.698 0.094 0.169]; PAL.div_mid = [0.941 0.937 0.925];
 PAL.div_pos = [0.165 0.471 0.839]; PAL.band = [0.90 0.90 0.88];
 PAL.expect = [0.35 0.35 0.35];
@@ -69,6 +84,16 @@ for n = 1:numel(PASS_NAMES)
     min(S.adm), max(S.adm));
 end
 assert(numel(R) >= 4, 'need the lines');
+
+%% ApRES site positions
+% Located 19 Aug 2026; before that the site position was unrecorded and
+% the ApRES value had to be drawn as a band across the whole axis.
+AP = read_apres_xy(apres_xy);
+for q = 1:numel(AP)
+  [AP(q).along, AP(q).off] = apres_along(R, ps_crs(), AP(q).x, AP(q).y);
+  fprintf('ApRES %-5s along %.2f km, %.2f km off the line\n', ...
+    AP(q).name, AP(q).along/1e3, AP(q).off/1e3);
+end
 
 %% GPS-curvature prediction along track
 % mean a(x) over the calibrated lines, quartic fit, analytic curvature
@@ -101,12 +126,19 @@ fprintf('GPS-curvature prediction: %.2f .. %.2f mm/m along the line\n', ...
 %% Figure
 h = figure('Visible','off','Position',[100 100 1180 560],'Color','w');
 set(0,'CurrentFigure',h);
-axst = {'GridAlpha',0.15,'XColor',PAL.ink_soft,'YColor',PAL.ink_soft,'Box','off'};
+axst = {'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off'};
 
-% local tangent frame
-lat0 = mean(cellfun(@(v) mean(v,'omitnan'), {R.lat}));
-lon0 = mean(cellfun(@(v) mean(v,'omitnan'), {R.lon}));
-xy = @(lon,lat) deal((lon-lon0)*111320*cosd(lat0)/1e3, (lat-lat0)*110540/1e3);
+% EPSG:3031 Antarctic Polar Stereographic, in km. This is the standard
+% Antarctic frame, and it is the frame the REMA tile and the MEaSUREs
+% grounding line already ship in, so neither overlay needs reprojecting -
+% the hillshade drops straight in with no resampling.
+%
+% ORIENTATION: at lon ~168 E the 3031 grid is rotated ~168 deg from local
+% north, so north points roughly DOWN in this view. That is what a polar
+% stereographic map looks like at this longitude; the previous local
+% tangent frame was north-up but is not a projection anyone else's data
+% is in.
+ps = projcrs(3031);
 
 % (a) map
 axm = axes('parent',h,'Position',[0.06 0.12 0.40 0.78]);
@@ -117,7 +149,7 @@ dmap = [interp1([0 1],[PAL.div_neg; PAL.div_mid], linspace(0,1,half)); ...
         interp1([0 1],[PAL.div_mid; PAL.div_pos], linspace(0,1,ndiv-half))];
 hTrk = gobjects(1, numel(R));
 for i = 1:numel(R)
-  [xk, yk] = xy(R(i).lon, R(i).lat);
+  [xk, yk] = ps_km(ps, R(i).lon, R(i).lat);
   hTrk(i) = plot(axm, xk, yk, '-', 'Color', [0.85 0.85 0.85], 'LineWidth', 0.5);
   for b = 1:numel(R(i).adm)
     if ~isfinite(R(i).adm(b)), continue; end
@@ -128,21 +160,29 @@ for i = 1:numel(R)
       'MarkerFaceColor', dmap(ci,:), 'MarkerEdgeColor', ec, 'LineWidth', 0.6);
   end
 end
-gl_drawn = overlay_gl(axm, gis_dir, xy);
+% ApRES sites: white fill, black edge, so they read against both the
+% hillshade and the value-coloured radar markers
+for q = 1:numel(AP)
+  plot(axm, AP(q).x/1e3, AP(q).y/1e3, 'o', 'MarkerSize', 8, ...
+    'MarkerFaceColor','w', 'MarkerEdgeColor', PAL.ink, 'LineWidth', 1.4);
+  text(axm, AP(q).x/1e3 + 0.12, AP(q).y/1e3, AP(q).name, 'FontSize', 8, ...
+    'Color', PAL.ink, 'VerticalAlignment','middle');
+end
+gl_drawn = overlay_gl(axm, gis_dir);
 grid(axm,'on'); set(axm, axst{:}); axis(axm,'equal');
-xlabel(axm, sprintf('East of %.4f deg (km)', lon0),'Color',PAL.ink);
-ylabel(axm, sprintf('North of %.4f deg (km)', lat0),'Color',PAL.ink);
+xlabel(axm, 'Polar stereographic x (km, EPSG:3031)','Color',PAL.ink);
+ylabel(axm, 'Polar stereographic y (km, EPSG:3031)','Color',PAL.ink);
 % no panel title: the (a)/(b) lettering and captions are added separately
 % in the slide or manuscript, same convention as the method schematic
 if gl_drawn, fprintf('map: grounding line drawn in black\n'); end
 colormap(axm, dmap); caxis(axm, [-CLIM CLIM]);
 cb = colorbar(axm);
 set(get(cb,'ylabel'),'string','mm per m of tide (top 100 m)','Color',PAL.ink);
-set(cb,'XColor',PAL.ink_soft,'YColor',PAL.ink_soft);
+set(cb,'XColor',PAL.ink,'YColor',PAL.ink);
 
 % Imagery under everything, drawn last so the axis limits are final. The
 % survey tracks flip to white: light gray disappears on the hillshade.
-if rema_underlay(axm, rema_tif, lat0, lon0)
+if rema_underlay(axm, rema_tif)
   set(hTrk, 'Color', 'w', 'LineWidth', 0.7);
   grid(axm, 'off');
 end
@@ -152,9 +192,6 @@ axp = axes('parent',h,'Position',[0.58 0.12 0.385 0.78]);
 set(0,'CurrentFigure',h); hold(axp,'on');
 xmax = 0;
 for i = 1:numel(R), xmax = max(xmax, max(R(i).along)/1e3); end
-% ApRES band (site position unknown, so a band across the axis)
-fill(axp, [0 xmax xmax 0], APRES_MM + APRES_SE*[-1 -1 1 1], PAL.band, ...
-  'EdgeColor','none');
 plot(axp, [0 xmax], [0 0], '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
 hl = []; lb = {};
 for i = 1:numel(R)
@@ -181,18 +218,51 @@ for k = 1:numel(xc)
   end
 end
 okb = isfinite(sm);
+fprintf('\nstacked response by 500 m bin (mm per m of tide, top 100 m):\n');
+for k = 1:numel(xc)
+  if okb(k), fprintf('  %.2f km  %+6.2f +/- %.2f\n', xc(k), sm(k), ss(k)); end
+end
+% The POSITION-MATCHED comparison: the radar stack interpolated to each
+% ApRES site's own along-track position. Before the sites were located
+% (19 Aug 2026) the only available comparison was ApRES against the radar
+% LINE MEAN, which is a different quantity wherever the profile varies.
+for q = 1:numel(AP)
+  if ~isfinite(AP(q).along), continue; end
+  v = interp1(xc(okb), sm(okb), AP(q).along/1e3, 'linear', NaN);
+  e = interp1(xc(okb), ss(okb), AP(q).along/1e3, 'linear', NaN);
+  fprintf('radar stack at %-5s (%.2f km along, %.2f km off): %+.2f +/- %.2f mm/m\n', ...
+    AP(q).name, AP(q).along/1e3, AP(q).off/1e3, v, e);
+end
 he = errbars(axp, xc(okb), sm(okb), ss(okb), PAL.ink);
 hs = plot(axp, xc(okb), sm(okb), 'o', 'MarkerSize', 9, 'MarkerFaceColor', PAL.ink, ...
   'MarkerEdgeColor','w', 'LineWidth', 1);
 fill(axp, [xg fliplr(xg)]/1e3, [pred_lo fliplr(pred_hi)], PAL.expect, ...
   'FaceAlpha', 0.15, 'EdgeColor','none');
 hp = plot(axp, xg/1e3, pred_mm, '--', 'Color', PAL.expect, 'LineWidth', 2.4);
+% ApRES at its OWN along-track position (GA04 is the only site with a
+% trustworthy tidal admittance - GA01's tracked bed drifts 81 m, so its
+% +9.3 is contrast only). Site coordinates recovered 19 Aug 2026.
+ha = [];
+iga4 = find(strcmp({AP.name},'GA04'), 1);
+if ~isempty(iga4) && isfinite(AP(iga4).along)
+  xa = AP(iga4).along/1e3;
+  plot(axp, [xa xa], APRES_MM + APRES_SE*[-1 1], '-', 'Color', PAL.ink, ...
+    'LineWidth', 1.4);
+  ha = plot(axp, xa, APRES_MM, 'o', 'MarkerSize', 9, 'MarkerFaceColor','w', ...
+    'MarkerEdgeColor', PAL.ink, 'LineWidth', 1.6);
+  fprintf('ApRES GA04 drawn at %.2f km along (%.2f km off the line)\n', ...
+    xa, AP(iga4).off/1e3);
+end
 grid(axp,'on'); set(axp, axst{:}); xlim(axp,[0 xmax]);
 xlabel(axp,'Along track (km)','Color',PAL.ink);
 ylabel(axp,'mm per m of tide (top 100 m)','Color',PAL.ink);
 % no panel title and no in-plot ApRES text (the gray band still marks the
 % ApRES value); lettering and captions are added separately
-lg = legend(axp, [hl hs hp], [lb {'stack (4 lines)','GPS a''''(x) prediction'}], ...
+leg_h = [hl hs hp]; leg_l = [lb {'stack (4 lines)','GPS a''''(x) prediction'}];
+if ~isempty(ha)
+  leg_h(end+1) = ha; leg_l{end+1} = 'ApRES GA04';
+end
+lg = legend(axp, leg_h, leg_l, ...
   'Location','southoutside','Orientation','horizontal','Interpreter','none');
 set(lg,'TextColor',PAL.ink,'Box','off','FontSize',8);
 
@@ -276,15 +346,83 @@ end
 end
 
 %% ========================================================================
-function ok = rema_underlay(ax, tif, lat0, lon0)
-%REMA_UNDERLAY Resample the REMA v2 hillshade under a tangent-plane axes.
-%   The axes' current xlim/ylim (km east/north of lon0/lat0) define the
-%   region. The EPSG:3031 raster is inverse-mapped onto that grid (the
-%   tangent frame is rotated ~12 deg against the 3031 grid here, so the
-%   image cannot just be dropped in), lifted into a light gray range so
-%   the data drawn on top stays dominant, and pushed to the bottom of the
-%   draw order. The sampled region is padded 8% beyond the limits so a
-%   small later limit adjustment does not expose white strips. Returns
+function ps = ps_crs()
+%PS_CRS The map projection, as a function so helpers need no plumbing.
+persistent p
+if isempty(p), p = projcrs(3031); end
+ps = p;
+end
+
+%% ========================================================================
+function AP = read_apres_xy(fn)
+%READ_APRES_XY Site name and EPSG:3031 metres from the whitespace table
+%   `x  y  name`. Returns an empty struct (with a note) when the file is
+%   absent, so the figure still builds without the site coordinates.
+AP = struct('name',{},'x',{},'y',{},'along',{},'off',{});
+if ~exist(fn,'file')
+  fprintf('ApRES site coordinates not found (%s) - sites not drawn.\n', fn);
+  return;
+end
+try
+  fid = fopen(fn,'r');
+  C = textscan(fid, '%f %f %s');
+  fclose(fid);
+  for k = 1:numel(C{3})
+    AP(end+1) = struct('name', C{3}{k}, 'x', C{1}(k), 'y', C{2}(k), ...
+      'along', NaN, 'off', NaN); %#ok<AGROW>
+  end
+  fprintf('ApRES sites read: %s\n', strjoin({AP.name}, ', '));
+catch ME
+  fprintf('Could not read %s (%s) - sites not drawn.\n', fn, ME.message);
+end
+end
+
+%% ========================================================================
+function [along_m, off_m] = apres_along(R, ps, X, Y)
+%APRES_ALONG Along-track position of an EPSG:3031 point (metres).
+%   The point is PROJECTED onto the block track of the calibrated lines,
+%   not snapped to the nearest block: blocks are ~500 m apart, so snapping
+%   would quantise the position to a quarter of the flexure scale. Returns
+%   the along-track coordinate in the radar's own frame plus the
+%   perpendicular distance, which matters here because the sites sit a few
+%   hundred metres OFF the line rather than on it.
+along_m = NaN; off_m = NaN; best = inf;
+for i = 1:numel(R)
+  if ~R(i).calib, continue; end
+  [bx, by] = ps_km(ps, R(i).lon, R(i).lat);
+  bx = bx*1e3; by = by*1e3;
+  [~, k] = min(hypot(bx - X, by - Y));
+  for kk = [k-1, k+1]
+    if kk < 1 || kk > numel(bx), continue; end
+    vx = bx(kk)-bx(k); vy = by(kk)-by(k);
+    L2 = vx^2 + vy^2;
+    if L2 == 0, continue; end
+    t = max(0, min(1, ((X-bx(k))*vx + (Y-by(k))*vy)/L2));
+    d = hypot(bx(k) + t*vx - X, by(k) + t*vy - Y);
+    if d < best
+      best = d; off_m = d;
+      along_m = R(i).along(k) + t*(R(i).along(kk) - R(i).along(k));
+    end
+  end
+end
+end
+
+%% ========================================================================
+function [xk, yk] = ps_km(ps, lon, lat)
+%PS_KM Project lon/lat to EPSG:3031 Antarctic Polar Stereographic, in km.
+[x, y] = projfwd(ps, lat, lon);
+xk = x/1e3; yk = y/1e3;
+end
+
+%% ========================================================================
+function ok = rema_underlay(ax, tif)
+%REMA_UNDERLAY Draw the REMA v2 hillshade under an EPSG:3031 axes in km.
+%   The axes are already in the raster's own projection, so the block
+%   covering the current view is read and dropped straight in - no
+%   resampling, no rotation, no reprojection. It is lifted into a light
+%   gray range so the data drawn on top stays dominant, and pushed to the
+%   bottom of the draw order. The block is padded 8% beyond the limits so
+%   a small later limit adjustment does not expose white strips. Returns
 %   false (with a message) when the tile is missing or unreadable, and
 %   the figure then renders exactly as it did without imagery.
 %
@@ -298,51 +436,46 @@ if ~exist(tif,'file')
 end
 try
   R3 = georasterinfo(tif).RasterReference;
-  xl = xlim(ax); yl = ylim(ax);
-  xpad = 0.08*diff(xl); ypad = 0.08*diff(yl);
-  xg = [xl(1)-xpad, xl(2)+xpad]; yg = [yl(1)-ypad, yl(2)+ypad];
-  nq = 1200;
-  [XK, YK] = meshgrid(linspace(xg(1), xg(2), nq), linspace(yg(1), yg(2), nq));
-  LAT = lat0 + YK*1e3/110540;
-  LON = lon0 + XK*1e3./(111320*cosd(lat0));
-  [XM, YM] = projfwd(projcrs(3031), LAT, LON);
+  xl = xlim(ax); yl = ylim(ax);                     % km, EPSG:3031
+  xg = xl + 0.08*diff(xl)*[-1 1];
+  yg = yl + 0.08*diff(yl)*[-1 1];
   px = R3.CellExtentInWorldX;
   py = R3.CellExtentInWorldY;                       % may differ from px
-  c0 = max(1, floor((min(XM(:)) - R3.XWorldLimits(1))/px) - 2);
-  c1 = min(R3.RasterSize(2), ceil((max(XM(:)) - R3.XWorldLimits(1))/px) + 2);
-  r0 = max(1, floor((R3.YWorldLimits(2) - max(YM(:)))/py) - 2);
-  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - min(YM(:)))/py) + 2);
+  c0 = max(1, floor((xg(1)*1e3 - R3.XWorldLimits(1))/px));
+  c1 = min(R3.RasterSize(2), ceil((xg(2)*1e3 - R3.XWorldLimits(1))/px));
+  r0 = max(1, floor((R3.YWorldLimits(2) - yg(2)*1e3)/py));
+  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - yg(1)*1e3)/py));
   if c1 <= c0 || r1 <= r0
     fprintf('REMA tile does not cover this view - no imagery underlay.\n');
     return;
   end
   A = double(imread(tif, 'Index', 1, 'PixelRegion', {[r0 r1],[c0 c1]}));
   A(A == 0) = NaN;                                  % nodata
-  xa = R3.XWorldLimits(1) + ((c0:c1) - 0.5)*px;
-  ya = R3.YWorldLimits(2) - ((r0:r1) - 0.5)*py;     % descending
-  V = interp2(xa, flip(ya(:)), flipud(A), XM, YM, 'linear');
-  vv = sort(V(isfinite(V)));
+  vv = sort(A(isfinite(A)));
   if isempty(vv)
     fprintf('REMA tile is empty over this view - no imagery underlay.\n');
     return;
   end
   lo = vv(max(1,round(0.02*numel(vv)))); hi = vv(round(0.98*numel(vv)));
-  g = min(max((V - lo)/max(hi-lo, 1), 0), 1);
+  g = min(max((A - lo)/max(hi-lo, 1), 0), 1);
   g = 0.58 + 0.40*g;                                % recessive light grays
-  g(~isfinite(V)) = 1;                              % nodata as paper white
-  hImg = image(ax, 'XData', xg, 'YData', yg, 'CData', repmat(g,[1 1 3]));
+  g(~isfinite(A)) = 1;                              % nodata as paper white
+  % cell centres of the block actually read, in km; y descends with row
+  ximg = (R3.XWorldLimits(1) + ([c0 c1] - 0.5)*px)/1e3;
+  yimg = (R3.YWorldLimits(2) - ([r0 r1] - 0.5)*py)/1e3;
+  hImg = image(ax, 'XData', ximg, 'YData', yimg, 'CData', repmat(g,[1 1 3]));
   uistack(hImg, 'bottom');
   xlim(ax, xl); ylim(ax, yl);
   ok = true;
-  fprintf('REMA hillshade underlay: %d x %d px read, %d x %d resampled\n', ...
-    r1-r0+1, c1-c0+1, nq, nq);
+  fprintf('REMA hillshade underlay: %d x %d px, native EPSG:3031\n', ...
+    r1-r0+1, c1-c0+1);
 catch ME
   fprintf('REMA underlay failed (%s) - continuing without imagery.\n', ME.message);
 end
 end
 
 %% ========================================================================
-function drawn = overlay_gl(ax, gis_dir, xy)
+function drawn = overlay_gl(ax, gis_dir)
 drawn = false;
 fn = fullfile(gis_dir,'GroundingLine_Antarctica_v02.shp');
 if ~exist(fn,'file'), return; end
@@ -352,8 +485,7 @@ try
   for k = 1:numel(S)
     X = [X; S(k).X(:); NaN]; Y = [Y; S(k).Y(:); NaN]; %#ok<AGROW>
   end
-  [glat, glon] = projinv(projcrs(3031), X, Y);
-  [gx, gy] = xy(glon, glat);
+  gx = X/1e3; gy = Y/1e3;      % the shapefile is already EPSG:3031 metres
   xl = xlim(ax); yl = ylim(ax); pad = 3;
   bad = gx < xl(1)-pad | gx > xl(2)+pad | gy < yl(1)-pad | gy > yl(2)+pad;
   gx(bad) = NaN; gy(bad) = NaN;
