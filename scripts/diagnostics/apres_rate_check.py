@@ -3,9 +3,10 @@
 
 WHY THIS EXISTS. apres_comparison.py chains 277 half-hour displacement
 profiles end-to-end and fits the cumulative series against the tide. That
-gave +3.79 mm per metre of tide at 100 m - opposite in sign to the radar
-(-1.46 +/- 0.55) and the flexure model (-1.2), and it framed weeks of
-"why can't multipass see the ApRES signal".
+gave +3.79 mm per metre of tide at 100 m, and it framed weeks of "why
+can't multipass see the ApRES signal". That number is RETRACTED; the
+banner in apres_comparison.py has the current grounds, which do not
+depend on any radar number.
 
 This script asks the same question with nearly no processing of mine: if
 strain = A*tide, then the strain RATE of a half-hour pair is A*d(tide)/dt.

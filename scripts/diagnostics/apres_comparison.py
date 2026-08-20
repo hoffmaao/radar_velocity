@@ -1,11 +1,28 @@
 #!/usr/bin/env python3
 """RETRACTED - the chained result of this script is an analysis artefact.
 
-The +3.79 mm-per-metre-of-tide profile this script produces is RETRACTED:
-it is opposite in sign to the radar network (-1.46 +/- 0.55), the flexure
-model (-1.2), and the rate-method check, and the cumulative-chaining
-analysis below is the only one of the four that disagrees. The bug has
-not yet been localised. The ApRES comparison of record is
+The +3.79 mm-per-metre-of-tide profile this script produces is RETRACTED.
+It is retracted on an internal inconsistency, not on a vote among
+methods: this chained analysis and the rate-method check use the SAME
+instrument at the SAME site over the SAME window and give incompatible
+answers, which a bug explains and physics does not. The chaining method
+also has specific known flaws - it integrates per-pair displacements as a
+random walk, applies iid OLS to errors that are autocorrelated by
+construction, and may double-count.
+
+DO NOT read the 2026-08-19 position-matched radar result as a reprieve.
+The earlier banner argued the +3.79 was the odd one out because it was
+opposite in sign to the radar LINE MEAN (-1.46 +/- 0.55); that argument
+is withdrawn, because a line mean is not the comparator for a point
+measurement, and at GA04's own position (4.70 km along) the radar reads
++2.22 +/- 0.86 - the SAME sign as this script's value. That coincidence
+is not understood, but it does not rehabilitate the profile: the radar's
+far-end magnitude is itself unresolved (+2.22 +/- 0.86 at 500 m bins
+against +0.30 +/- 0.43 at 1 km, see diagnostics/far_end_check.m), and the
+flaws above are methodological rather than inferred from any
+disagreement. See the ApRES section of README.md for the full account.
+
+The bug has not yet been localised. The ApRES comparison of record is
 scripts/diagnostics/apres_rate_check.py (GA04: -1.24 +/- 0.04 mm per
 metre of tide over 100 m). This script is kept ONLY so the artefact stays
 demonstrable for the pending bug hunt; its CSV export has been removed so

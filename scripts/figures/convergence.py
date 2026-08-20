@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The convergence figure: three independent estimates of the tidal response.
+"""ApRES against the radar AT THE ApRES SITE: every estimate of the tidal response.
 
 Two panels, no in-plot text - axis labels only, with identity and context
 carried by the caption (by request):
@@ -58,7 +58,7 @@ from the local EAGER_ApRES repo. Built locally in Python - the ApRES data
 exists only on this machine.
 
 Run from the repo root:  python3 scripts/figures/convergence.py
-Writes figs/EAGER_2022_convergence.png
+Writes figs/EAGER_2022_apres_radar_comparison.png
 """
 import csv
 import math
@@ -287,7 +287,7 @@ def main():
     ax2.tick_params(colors=INK, left=False)
     ax2.grid(axis="x", alpha=0.18)
 
-    out = os.path.join(ROOT, "figs", "EAGER_2022_convergence.png")
+    out = os.path.join(ROOT, "figs", "EAGER_2022_apres_radar_comparison.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     fig.savefig(out, bbox_inches="tight", facecolor="white")
     print(f"wrote {out}")
