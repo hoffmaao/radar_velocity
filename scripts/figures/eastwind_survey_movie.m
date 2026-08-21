@@ -36,6 +36,9 @@
 TMD_DIR   = '/kucresis/scratch/hoffmana_sta/scripts/TMD';
 GIS_DIR   = '/kucresis/scratch/hoffmana_sta/vvel/gis';
 GL_SHP    = fullfile(GIS_DIR,'GroundingLine_Antarctica_v02.shp');
+% LIMA 240 m, used ONLY for the continent inset ("where in Antarctica").
+% The map panel and the neighbourhood inset are both REMA.
+LIMA_TIF  = fullfile(GIS_DIR,'lima','tiff_90pct','00000-20080319-092059124.tif');
 % REMA v2 mosaic hillshade (10 m browse, tile 17_33, EPSG:3031) under the
 REMA_TIF  = fullfile(GIS_DIR,'rema','17_33_10m_v2.0_browse.tif');
 CATS      = fullfile(TMD_DIR,'usapdc_601772','CATS2008_v2023.nc');
@@ -48,6 +51,7 @@ STEP_MIN  = 3;      % [min] animation time step
 FPS       = 24;     % 40 -> 16 (2.5x slower) -> 24 (1.5x faster again)
 N_TIDE_PT = 12;     % points across the array that the mean tide averages over
 ZOOM_OUT  = 1.15;   % how far to pull the map back from the survey extent
+LIMA_DEC  = 20;     % decimation for the continent inset
 
 addpath(TMD_DIR);
 if ~exist(OUT_DIR,'dir'), mkdir(OUT_DIR); end
@@ -251,6 +255,56 @@ set(axI,'DataAspectRatio',[1 1 1],'XTick',[],'YTick',[],'Box','on', ...
   'XColor',ink,'YColor',ink,'LineWidth',1);
 fprintf('inset: %.0f km neighbourhood, extent box %.0f%% of frame\n', ...
   INSET_KM, 100*2*half_y/INSET_KM);
+
+% Continent inset, directly below the neighbourhood one: the "where in
+% Antarctica" the neighbourhood cannot answer.
+%
+% WHY A POINT AND NOT AN OUTLINE. A true-scale outline of the panel above
+% would be 30 km on a 5482 km continent - about HALF A PIXEL in a ~95 px
+% inset. So the location is drawn as a point. A point claims a position
+% and not an extent, which is precisely the distinction the old inflated
+% 350 km box got wrong: it looked like a footprint and was a hundred times
+% too big. Extent is carried by the panel above, at the one scale where
+% showing it honestly is possible, and by survey_locator.m in full.
+try
+  gi = geotiffinfo(LIMA_TIF);
+  lpx = abs(gi.PixelScale(1));
+  LIM = imread(LIMA_TIF, 'PixelRegion', ...
+    {[1 LIMA_DEC gi.Height],[1 LIMA_DEC gi.Width]});
+  lxk = (gi.BoundingBox(1,1) + [0 gi.Width-1]*lpx)/1e3;
+  lyk = (gi.BoundingBox(2,2) - [0 gi.Height-1]*lpx)/1e3;
+  axJ = axes('parent',h,'Position',[axM_pos(1)+axM_pos(3)-0.113, ...
+    axM_pos(2)+axM_pos(4)-0.232, 0.105, 0.105]);
+  image(axJ, lxk, lyk, LIM); set(axJ,'YDir','normal'); hold(axJ,'on');
+  plot(axJ, icx, icy, 'o', 'MarkerSize', 5, 'MarkerFaceColor', hot, ...
+    'MarkerEdgeColor', 'w', 'LineWidth', 1.2);
+  % ALL of Antarctica must be inside the frame. The inset axes is SQUARE
+  % (0.105 x 0.105 of a 900 px figure) but LIMA spans 5482 x 4657 km, so
+  % simply handing it the raster limits and a 1:1 data aspect leaves the
+  % fit to MATLAB and risks cropping the long axis. Instead the window is
+  % made explicitly square, sized on the LONGER side and centred, so the
+  % whole continent is inside it by construction whatever the axes box
+  % does. The padding falls outside the raster, so the axes background is
+  % set to LIMA's own nodata black and the join is invisible.
+  lxs = sort(lxk); lys = sort(lyk);
+  cxL = mean(lxs); cyL = mean(lys);
+  halfL = max(diff(lxs), diff(lys))/2;
+  xlim(axJ, cxL + halfL*[-1 1]); ylim(axJ, cyL + halfL*[-1 1]);
+  set(axJ,'DataAspectRatio',[1 1 1],'XTick',[],'YTick',[],'Box','on', ...
+    'Color','k','XColor',ink,'YColor',ink,'LineWidth',1);
+  % assert it rather than trust it: the continent must fit with margin
+  xl_ = xlim(axJ); yl_ = ylim(axJ);
+  covers = lxs(1) >= xl_(1) && lxs(2) <= xl_(2) && ...
+           lys(1) >= yl_(1) && lys(2) <= yl_(2);
+  fprintf(['continent inset %d x %d px (decimated %dx), window %.0f km square, ' ...
+           'whole continent inside: %d; location marked as a point\n'], ...
+    size(LIM,1), size(LIM,2), LIMA_DEC, 2*halfL, covers);
+  if ~covers
+    warning('continent inset does not contain the full LIMA extent');
+  end
+catch ME
+  fprintf('continent inset unavailable (%s)\n', ME.message);
+end
 
 %% Render
 % PREVIEW_ONLY writes ONE frame as a png and stops, for checking layout and
