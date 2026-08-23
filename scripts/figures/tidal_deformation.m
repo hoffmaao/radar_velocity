@@ -117,9 +117,7 @@ if ~exist(out_dir,'dir'), mkdir(out_dir); end
 % Palette. Blocks along a line are ORDERED -> single-hue sequential ramp.
 % Lines are CATEGORIES -> validated categorical hues (5 slots, worst
 % adjacent CVD dE 9.1; the sub-3:1 contrast warning on three of them is
-% relieved by the legend and the printed table). The correlation map is
-% POLARITY -> diverging, two poles with a neutral gray midpoint and no hue
-% at the middle.
+% relieved by the legend and the printed table).
 PAL = struct();
 PAL.seq_anchors = [0.776 0.859 0.937; 0.419 0.682 0.839; 0.129 0.443 0.710; ...
                    0.032 0.271 0.580; 0.031 0.188 0.420];
@@ -128,10 +126,6 @@ PAL.cat = [0.165 0.471 0.839;    % #2a78d6 blue
            0.106 0.686 0.478;    % #1baf7a aqua
            0.929 0.631 0.000;    % #eda100 yellow
            0.910 0.482 0.643];   % #e87ba4 magenta
-PAL.cat_mk  = {'o','s','^','d','v'};
-PAL.div_neg = [0.698 0.094 0.169];   % red pole:  strain falls as the tide rises
-PAL.div_mid = [0.941 0.937 0.925];   % neutral gray midpoint
-PAL.div_pos = [0.165 0.471 0.839];   % blue pole: strain rises with the tide
 PAL.ink      = [0 0 0];      % axis labels, tick labels, axis lines
 PAL.ink_soft = [0.45 0.45 0.45];
 

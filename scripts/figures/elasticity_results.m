@@ -62,21 +62,11 @@ L = D.lines; R = D.fits;
 CASE = 1; AXCASE = 2; BMCASE = 3;
 nL = numel(L);
 
-% Constrained = the data bound the modulus from above AND the beam
-% actually describes the line's flexure data (shape chi-squared below 3).
-% Both clauses are needed and the second became load-bearing when the
-% strain joined the fit: the strain amplitude closes GL2's upper bound, so
-% "unbounded" alone would silently promote into the mean a line whose a(x)
-% carries a physically impossible negative block and misfits at 3.7.
-% Criterion, not name, so the figure tracks the data across rebuilds.
-con = false(1,nL);
-for i = 1:nL
-  Ri = R{CASE,i};
-  if isempty(Ri), continue; end
-  x2a = Ri.chi2red;
-  if Ri.has_strain && isfinite(Ri.chi2_shape), x2a = Ri.chi2_shape; end
-  con(i) = isfinite(Ri.E_hi) && isfinite(x2a) && x2a < 3;
-end
+% Constrained = the averaging gate the driver computes once for both
+% result figures (see OUT.constrained in elastic_modulus for the
+% criterion and why both of its clauses are needed). Read, not
+% recomputed, so this figure and elasticity_map cannot disagree on it.
+con = D.constrained(CASE,:);
 
 % ApRES bed depths at the two stable sites, converted through the SAME
 % firn column as the radar traveltimes (the sites' own constant-n depths

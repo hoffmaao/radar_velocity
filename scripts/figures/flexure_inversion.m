@@ -86,7 +86,7 @@ for i = 1:nL
     qopts = struct('h', opts.h_sweep(q), 'sigma', L(i).a_std(ok), ...
                    'avg_width', avg_w, 'E_grid', E_SWEEP, ...
                    'x0_grid', R{CASE,i}.x0_grid);
-    qopts = with_line_strain(qopts, L(i));
+    qopts = with_line_strain(qopts, L(i), R{CASE,i});
     Rq = vdef.invertElasticModulus(L(i).x_sea(ok), L(i).a(ok), qopts);
     Esw(q,i) = Rq.E;
   end
@@ -146,7 +146,7 @@ if ~isempty(ib)
   bopts = struct('h', R0.h_spec, 'sigma', L(ib).a_std(okb), 'avg_width', avg_w, ...
                  'E_grid', logspace(log10(R0.E/8), log10(R0.E*8), 61), ...
                  'x0_grid', R0.x0 + (-1500:50:1500));
-  bopts = with_line_strain(bopts, L(ib));
+  bopts = with_line_strain(bopts, L(ib), R0);
   Rb = vdef.invertElasticModulus(L(ib).x_sea(okb), L(ib).a(okb), bopts);
   % Relative to the minimum and in units of the data variance, capped so the
   % valley is legible rather than one dark pixel beside a saturated field.
@@ -239,10 +239,13 @@ s = strrep(name, 'EAGER_2022_', '');
 end
 
 %% ========================================================================
-function o = with_line_strain(o, Li)
-%WITH_LINE_STRAIN Attach a line's englacial strain dataset, when it has one.
-if isfield(Li,'s_x') && numel(Li.s_x) >= 3
+function o = with_line_strain(o, Li, Ri)
+%WITH_LINE_STRAIN Attach a line's englacial strain dataset, when the fit
+%   used one. The ref_depth comes from the fit's echoed strain spec, so a
+%   refit here fits the same observable the headline fit did.
+if Ri.has_strain && isfield(Li,'s_x') && numel(Li.s_x) >= 3
   o.strain = struct('x', Li.s_x, 'y', Li.s_y, 'sigma', Li.s_sig, ...
-                    'ref_depth', 100, 'avg_width', o.avg_width);
+                    'ref_depth', Ri.strain_spec.ref_depth, ...
+                    'avg_width', o.avg_width);
 end
 end

@@ -204,8 +204,9 @@ half_y = max(ZOOM_OUT*(max(sy_km)-min(sy_km))/2, ...
 half_x = half_y * panel_aspect;
 xlim(axM, mx + [-half_x half_x]);
 ylim(axM, my + [-half_y half_y]);
-% Printed so it can be checked against survey_locator.m, whose panel (c)
-% must be this same view for its true-scale box to mean anything.
+% Printed so it can be checked against survey_locator.m, whose panel (d)
+% must be this same view for the true-scale box drawn in its panel (c) to
+% mean anything.
 fprintf(['map panel extent: x %.2f..%.2f km, y %.2f..%.2f km ' ...
          '(%.2f x %.2f km)\n'], mx-half_x, mx+half_x, my-half_y, my+half_y, ...
         2*half_x, 2*half_y);

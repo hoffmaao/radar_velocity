@@ -178,6 +178,9 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                           against its own input sigmas - the joint fit
 %                           cannot be trusted unless both are order 1
 %     R.strain_x/_obs/_sigma/_model   the strain data and the fit at them
+%     R.strain_spec         the ref_depth and avg_width the strain rows
+%                           used - echoed, like R.h_spec, so a caller can
+%                           refit the same observable
 %     R.strain_grid         predicted strain admittance on R.x_grid's
 %                           beam section, for plotting
 %
@@ -474,6 +477,8 @@ if has_strain
   R.strain_x      = sx_;
   R.strain_obs    = sy_;
   R.strain_sigma  = ss_;
+  R.strain_spec   = struct('ref_depth', opts.strain.ref_depth, ...
+                           'avg_width', opts.strain.avg_width);
   R.strain_model  = amp*Wbest.S;
   R.chi2_strain   = sum((resid_s ./ ss_).^2) / max(Ns - 1, 1);
   if have_sigma

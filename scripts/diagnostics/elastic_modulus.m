@@ -80,6 +80,10 @@ function OUT = elastic_modulus(opts)
 %   thickness case per line), so the figure reuses the numbers rather than
 %   refitting them. OUT.block echoes the block size the fits used, so
 %   figure-side refits block-average at the same width as these fits.
+%   OUT.constrained(c,i) is the averaging gate the result figures share:
+%   E* bounded from above AND the shape data described (reduced
+%   chi-squared under 3) - computed here, once, so the figures cannot
+%   drift apart on the criterion.
 %
 %   Run on the server:
 %     /opt/sw/matlab/2024b/bin/matlab -batch \
@@ -115,6 +119,8 @@ end
 MIN_PASS = 5;                  % passes needed to regress a block on the tide
 E_GRID   = logspace(log10(0.05e9), log10(30e9), 61);
 X0_GRID  = -6000:250:1000;     % clamp position, seaward coordinates
+REF_DEPTH = 100;               % [m] depth the englacial strain admittance is
+                               % read at; echoed to callers via R.strain_spec
 
 % THICKNESS. The primary case is the TRACKED BED - the OPR layer_tracker
 % (Viterbi, the toolbox's own ACCUM bottom configuration, multiple
@@ -174,7 +180,7 @@ if exist(opts.net_dir,'dir')
   fprintf('\n=== englacial strain admittance (from %s) ===\n', opts.net_dir);
   for i = 1:numel(L)
     G = load_strain_admittance(L(i).name, opts.net_dir, opts.mp_dir, ...
-          struct('ref_depth', 100));
+          struct('ref_depth', REF_DEPTH));
     if isempty(G), continue; end
     xs = L(i).x_flip_sign * (G.along - L(i).x_flip_ref);
     okg = isfinite(xs) & isfinite(G.adm) & isfinite(G.adm_std) & G.adm_std > 0;
@@ -227,7 +233,7 @@ for c = 1:nC
                    'E_grid', E_GRID, 'x0_grid', X0_GRID);
     if H_CASES{c,3} && numel(L(i).s_x) >= 3
       iopts.strain = struct('x', L(i).s_x, 'y', L(i).s_y, ...
-                            'sigma', L(i).s_sig, 'ref_depth', 100, ...
+                            'sigma', L(i).s_sig, 'ref_depth', REF_DEPTH, ...
                             'avg_width', opts.block*2.5);
     end
     R = vdef.invertElasticModulus(L(i).x_sea(ok), L(i).a(ok), iopts);
@@ -286,8 +292,27 @@ fprintf(['\nThe intervals above are per-line and formal. On a window this ' ...
          'not carry is anything the lines disagree about - quote the ' ...
          'spread alongside them.\n']);
 
+% The averaging gate the result figures share (elasticity_results,
+% elasticity_map): the data bound E* from above AND the beam describes the
+% line's own shape data (reduced chi-squared below 3). Both clauses are
+% needed, and the second became load-bearing when the strain joined the
+% fit: the strain amplitude closes GL2's upper bound, so "unbounded" alone
+% would silently promote into the mean a line whose a(x) carries a
+% physically impossible negative block and misfits at 3.7. Criterion, not
+% name, so the gate tracks the data across rebuilds.
+con = false(nC, numel(L));
+for c = 1:nC
+  for i = 1:numel(L)
+    Ri = Rall{c,i};
+    if isempty(Ri), continue; end
+    x2a = chi2a_of(Ri);
+    con(c,i) = isfinite(Ri.E_hi) && isfinite(x2a) && x2a < 3;
+  end
+end
+
 OUT = struct('lines', L, 'fits', {Rall}, 'E', Efit, ...
-             'cases', {H_CASES(:,1)}, 'block', opts.block);
+             'cases', {H_CASES(:,1)}, 'block', opts.block, ...
+             'constrained', con);
 
 end
 

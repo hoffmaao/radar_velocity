@@ -11,8 +11,8 @@
 %
 %   Every box here is TRUE SCALE; the readability an inflated box would
 %   buy is bought instead with intermediate panels and connector lines.
-%   The zoom factors are ~55x then ~18x, which is what it takes to get
-%   from a continent to a 5 km line without a step where the box
+%   The zoom factors are ~14x, ~13x, then ~5x, which is what it takes to
+%   get from a continent to a 5 km line without a step where the box
 %   vanishes.
 %
 %     (a) Antarctica, LIMA 240 m.        Box = (b), 400 km  -> 7% of frame
@@ -29,9 +29,9 @@
 %   then two REMA steps keeps every box between 7% and 20% of its frame -
 %   visible on its own, before the connector lines help at all.
 %
-%   PANEL (c) IS THE MOVIE'S MAP PANEL, to the kilometre. Its extent is
+%   PANEL (d) IS THE MOVIE'S MAP PANEL, to the kilometre. Its extent is
 %   computed with the same formula and the same constants the movie uses
-%   (ZOOM_OUT, and the movie's map-panel aspect), so the box drawn in (b)
+%   (ZOOM_OUT, and the movie's map-panel aspect), so the box drawn in (c)
 %   really is the frame the tracks are drawn in. Both scripts print the
 %   extent they computed, so a divergence is visible rather than silent -
 %   see the CONSISTENCY block below, which is the thing to check if these
@@ -50,8 +50,8 @@ PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
 
 % ---- CONSISTENCY WITH eastwind_survey_movie.m -------------------------
-% These three MUST match the movie or panel (c) stops being the movie's
-% map panel and the box in (b) becomes a lie of exactly the kind this
+% These three MUST match the movie or panel (d) stops being the movie's
+% map panel and the box in (c) becomes a lie of exactly the kind this
 % figure exists to avoid. Both scripts print the extent they derive; if
 % they ever disagree, this block is why.
 ZOOM_OUT     = 1.15;                    % movie: ZOOM_OUT

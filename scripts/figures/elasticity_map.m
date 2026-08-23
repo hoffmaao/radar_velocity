@@ -64,16 +64,10 @@ L = D.lines; R = D.fits; CASE = 1;
 nL = numel(L);
 avg_w = D.block * 2.5;                           % the width the fits used
 
-% Same gate as elasticity_results: bounded AND the beam describes the
-% line's own flexure data.
-con = false(1,nL);
-for i = 1:nL
-  Ri = R{CASE,i};
-  if isempty(Ri), continue; end
-  x2a = Ri.chi2red;
-  if Ri.has_strain && isfinite(Ri.chi2_shape), x2a = Ri.chi2_shape; end
-  con(i) = isfinite(Ri.E_hi) && isfinite(x2a) && x2a < 3;
-end
+% The averaging gate the driver computes once for both result figures
+% (see OUT.constrained in elastic_modulus). Read, not recomputed, so this
+% figure and elasticity_results cannot disagree on it.
+con = D.constrained(CASE,:);
 
 rand('seed', 7); randn('seed', 7);   %#ok<RAND> % control is reproducible
 
@@ -91,7 +85,8 @@ for i = 1:nL
   hasS = Rg.has_strain;
   if hasS
     base.strain = struct('x', L(i).s_x, 'y', L(i).s_y, ...
-      'sigma', L(i).s_sig, 'ref_depth', 100, 'avg_width', avg_w);
+      'sigma', L(i).s_sig, 'ref_depth', Rg.strain_spec.ref_depth, ...
+      'avg_width', avg_w);
   end
 
   % Control observations: the global fit's own predictions plus the
