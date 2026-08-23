@@ -4,9 +4,11 @@ function OUT = elasticity_results(opts)
 %
 %   Three panels:
 %     (a) THE OBSERVATION AND THE FITS. Surface tidal admittance per line
-%         with the fitted beams and the fitted clamp positions. Lines whose
-%         modulus the data do not bound (E_hi unbounded - GL2 on current
-%         data) are drawn in grey: shown, not averaged.
+%         with the fitted beams and the fitted clamp positions. Lines the
+%         gate excludes - E_hi unbounded, OR the beam misfitting the
+%         line's own shape data (chi-squared >= 3; GL2 on current data,
+%         at 3.7 on its known ref_z anomaly, the strain having closed its
+%         upper bound) - are drawn in grey: shown, not averaged.
 %     (b) THE THICKNESS THAT WENT IN. The tracked bed h(x) per line, the
 %         BedMachine pseudo-layer it replaced (grey dashed, one line), and
 %         the ApRES bed depths at the two stable sites, converted through
@@ -130,6 +132,16 @@ for i = 1:nL
   if isnumeric(hs) && size(hs,2) == 2
     plot(ax, hs(:,1)/1e3, hs(:,2), 'o-', 'Color', linecol(i), ...
       'MarkerSize', 3.5, 'LineWidth', 1.3, 'MarkerFaceColor', linecol(i));
+  elseif isnumeric(hs) && isscalar(hs)
+    % The driver fell back to its scalar segment median for this line; a
+    % constrained line must not vanish from the thickness panel while it
+    % stands in the E* forest, so the constant it actually used is drawn.
+    fprintf(['panel (b): %s used the scalar fallback thickness %.0f m - ' ...
+             'drawn as a flat dashed line\n'], shortname(L(i).name), hs);
+    if isfinite(xlo) && xhi > xlo
+      plot(ax, [max(xlo,-0.5) xhi], [hs hs], '--', 'Color', linecol(i), ...
+        'LineWidth', 1.1);
+    end
   end
   if ~bm_drawn && ~isempty(R{BMCASE,i})
     hb = R{BMCASE,i}.h_spec;

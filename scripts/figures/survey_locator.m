@@ -221,10 +221,14 @@ function connect(h, ax_from, ext, ax_to, col)
 % Leader lines from a box in ax_from to the whole of ax_to, in figure
 % coordinates. Drawn from the box's right-hand corners to the target
 % panel's left-hand corners, which is the standard nested-locator idiom
-% and reads correctly for panels laid out left to right.
+% and reads correctly for panels laid out left to right. Both ends use the
+% axes' DRAWN plot box, not its Position rectangle: DataAspectRatio
+% [1 1 1] letterboxes the plot box inside Position, and leaders anchored
+% to Position would visibly miss the true-scale corners this figure
+% exists to register.
 p1 = data2fig(ax_from, ext(2), ext(4));    % box top right
 p2 = data2fig(ax_from, ext(2), ext(3));    % box bottom right
-q  = get(ax_to,'Position');
+q  = plotbox(ax_to);
 for pr = {[p1; q(1), q(2)+q(4)], [p2; q(1), q(2)]}
   a = pr{1};
   annotation(h,'line', [a(1,1) a(2,1)], [a(1,2) a(2,2)], ...
@@ -234,9 +238,30 @@ end
 
 %% ========================================================================
 function p = data2fig(ax, x, y)
-% Data coordinates to normalised figure coordinates.
-pos = get(ax,'Position'); xl = xlim(ax); yl = ylim(ax);
+% Data coordinates to normalised figure coordinates, through the axes'
+% drawn plot box (see plotbox).
+pos = plotbox(ax); xl = xlim(ax); yl = ylim(ax);
 p = [pos(1) + (x-xl(1))/diff(xl)*pos(3), pos(2) + (y-yl(1))/diff(yl)*pos(4)];
+end
+
+%% ========================================================================
+function pb = plotbox(ax)
+% The rectangle the axes actually draw in, in normalised figure units.
+% With DataAspectRatio [1 1 1] and manual limits, MATLAB shrinks the plot
+% box to the data aspect and centres it inside Position - the letterboxed
+% margins are what leaders must not treat as axes.
+pos = get(ax,'Position');
+fp  = get(ancestor(ax,'figure'),'Position');            % pixels
+w = pos(3)*fp(3); ht = pos(4)*fp(4);
+xl = xlim(ax); yl = ylim(ax);
+ar = abs(diff(yl)/diff(xl));                            % units are equal km
+if w*ar <= ht
+  hh = w*ar;                                            % letterboxed top/bottom
+  pb = [pos(1), pos(2) + (ht-hh)/2/fp(4), pos(3), hh/fp(4)];
+else
+  ww = ht/ar;                                           % letterboxed left/right
+  pb = [pos(1) + (w-ww)/2/fp(3), pos(2), ww/fp(3), pos(4)];
+end
 end
 
 %% ========================================================================

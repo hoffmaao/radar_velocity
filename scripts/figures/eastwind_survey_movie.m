@@ -40,6 +40,7 @@ GL_SHP    = fullfile(GIS_DIR,'GroundingLine_Antarctica_v02.shp');
 % The map panel and the neighbourhood inset are both REMA.
 LIMA_TIF  = fullfile(GIS_DIR,'lima','tiff_90pct','00000-20080319-092059124.tif');
 % REMA v2 mosaic hillshade (10 m browse, tile 17_33, EPSG:3031) under the
+% map panel and the neighbourhood inset.
 REMA_TIF  = fullfile(GIS_DIR,'rema','17_33_10m_v2.0_browse.tif');
 CATS      = fullfile(TMD_DIR,'usapdc_601772','CATS2008_v2023.nc');
 MP_DIR    = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
@@ -312,8 +313,8 @@ end
 inset_box(axC, AOIBOX, hot);
 xlim(axC, LOCAL(1:2)); ylim(axC, LOCAL(3:4));
 style_inset(axC, ink);
-fprintf('inset (c) neighbourhood: %.0f km, box %.1f%% of frame\n', ...
-  LOCAL_KM, 100*2*half_y/LOCAL_KM);
+fprintf('inset (c) neighbourhood: %.0f km, box %.1f%% x %.1f%% of frame\n', ...
+  LOCAL_KM, 100*2*half_x/LOCAL_KM, 100*2*half_y/LOCAL_KM);
 
 %% Render
 % PREVIEW_ONLY writes ONE frame as a png and stops, for checking layout and

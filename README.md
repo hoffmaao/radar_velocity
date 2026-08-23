@@ -400,8 +400,11 @@ reported strain rates and velocities are converted to per-year.
 tidal surface deflection and returns the single effective elastic
 parameter `E*` that minimises the misfit. The driver is
 `scripts/diagnostics/elastic_modulus.m`, which inverts the GPS surface
-tidal admittance `a(x)` of each calibrated leg against ApRES-derived ice
-thickness. It prints and returns fits;
+tidal admittance `a(x)` of each calibrated leg against the tracked-bed
+thickness `h(x)` - the OPR layer_tracker bed run over the four main-pass
+segments, validated to ~2 m against the ApRES bed at GA10 - with the
+BedMachine pseudo-layer and two constant ApRES/radar thicknesses kept as
+bracket cases. It prints and returns fits;
 `scripts/figures/flexure_inversion.m` calls it and draws them, so the
 inversion has one implementation and the plot another and neither can
 drift. Its four panels are the observation and the fit, the misfit surface

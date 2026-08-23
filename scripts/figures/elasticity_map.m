@@ -168,6 +168,22 @@ ylabel(ax1,'Local E* (GPa)');
 set(ax1,'XTickLabel',[]);
 title(ax1,'(a)  E* per 1 km patch, clamp and far field held at the global fit');
 legend(ax1, hleg, lleg, 'Location','NorthEast');
+% Excluded lines carry no patch values to draw, but absence without trace
+% is the reading the map view's grey convention exists to prevent - so the
+% profile panel says so in words instead of fabricating markers.
+excl = {};
+for i = 1:nL
+  if ~con(i) && ~isempty(R{CASE,i})
+    excl{end+1} = strrep(L(i).name,'EAGER_2022_',''); %#ok<AGROW>
+  end
+end
+if ~isempty(excl)
+  text(ax1, 0.02, 0.06, sprintf('%s gated out - no patch values fitted', ...
+    strjoin(excl, ', ')), 'Units','normalized', 'FontSize', 8.5, ...
+    'Color', grey);
+  fprintf('profile panels: %s gated out - annotated, no patch values\n', ...
+    strjoin(excl, ', '));
+end
 
 % (b) the resolution profile: how much the data say, patch by patch
 ax2 = axes('parent',hf,'Position',[0.09 0.09 0.87 0.27]);
@@ -270,15 +286,24 @@ for i = 1:nL
     strrep(L(i).name,'EAGER_2022_',''));
 end
 
-% ApRES sites, from the same file the other maps use
+% ApRES sites, from the same file the other maps use. Guarded like
+% admittance_map's read_apres_xy: a missing or malformed sites file is a
+% printed note, not an abort after the expensive patch scan.
 apres_xy = '/kucresis/scratch/hoffmana_sta/vvel/gis/eastwind_2022_2023_apres_xy.txt';
-if exist(apres_xy,'file')
-  fid = fopen(apres_xy,'r'); Csx = textscan(fid,'%f %f %s'); fclose(fid);
-  for q = 1:numel(Csx{3})
-    plot(axm, Csx{1}(q)/1e3, Csx{2}(q)/1e3, 'o', 'MarkerSize', 8, ...
-      'MarkerFaceColor','w', 'MarkerEdgeColor', PAL.ink, 'LineWidth', 1.4);
-    text(axm, Csx{1}(q)/1e3 + 0.12, Csx{2}(q)/1e3, Csx{3}{q}, ...
-      'FontSize', 8, 'Color', PAL.ink, 'VerticalAlignment','middle');
+if ~exist(apres_xy,'file')
+  fprintf('ApRES site coordinates not found (%s) - sites not drawn.\n', apres_xy);
+else
+  try
+    fid = fopen(apres_xy,'r'); Csx = textscan(fid,'%f %f %s'); fclose(fid);
+    for q = 1:numel(Csx{3})
+      plot(axm, Csx{1}(q)/1e3, Csx{2}(q)/1e3, 'o', 'MarkerSize', 8, ...
+        'MarkerFaceColor','w', 'MarkerEdgeColor', PAL.ink, 'LineWidth', 1.4);
+      text(axm, Csx{1}(q)/1e3 + 0.12, Csx{2}(q)/1e3, Csx{3}{q}, ...
+        'FontSize', 8, 'Color', PAL.ink, 'VerticalAlignment','middle');
+    end
+    fprintf('ApRES sites drawn: %s\n', strjoin(Csx{3}.', ', '));
+  catch ME
+    fprintf('Could not read %s (%s) - sites not drawn.\n', apres_xy, ME.message);
   end
 end
 
@@ -294,10 +319,17 @@ xlabel(axm,'Polar stereographic x (km, EPSG:3031)','Color',PAL.ink);
 ylabel(axm,'Polar stereographic y (km, EPSG:3031)','Color',PAL.ink);
 colormap(axm, dmap); caxis(axm, [-CLIMD CLIMD]);
 cb = colorbar(axm);
-% Ticks in GPa at round values, placed at their log-ratio positions
-tv = [1.5 2.5 3.9 6 10];
+% Ticks in GPa at round values, placed at their log-ratio positions. The
+% candidates are filtered against the DATA-DEPENDENT Eref so the labels
+% always land inside the fixed caxis - hardcoding one tick set would leave
+% a nearly bare colorbar the first time a rebuild moves the pooled mean.
+cand = [0.3 0.5 0.7 1 1.5 2 3 4 5 7 10 15 20 30];
+tv = cand(abs(log10(cand/(Eref/1e9))) <= CLIMD*0.999);
+if numel(tv) < 3
+  tv = (Eref/1e9) * 10.^linspace(-0.8*CLIMD, 0.8*CLIMD, 5);
+end
 set(cb, 'Ticks', log10(tv/(Eref/1e9)), ...
-        'TickLabels', arrayfun(@(v) sprintf('%.1f',v), tv, 'uni', 0));
+        'TickLabels', arrayfun(@(v) sprintf('%.3g',v), tv, 'uni', 0));
 set(get(cb,'ylabel'),'string','Local E* (GPa)','Color',PAL.ink);
 set(cb,'XColor',PAL.ink,'YColor',PAL.ink);
 

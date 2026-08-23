@@ -6,13 +6,19 @@ function OUT = basal_crevasse_map(opts)
 %   effective h^3, a basal crevasse incises upward into the column, and
 %   the bed tracker picks the deepest coherent return so the weakened
 %   section still reads as full thickness - the weakness lands in E*
-%   instead. WHAT THE MAP FINDS: isolated keels at x_sea 2.29 km (6.6 m,
-%   all four segments) and 2.94-2.99 km (5.9-7.6 m, three to four
-%   segments, crossing adjacent corridors) - AT the soft-E* band - plus
-%   smaller confirmed features at 3.21 and 3.75 km, and dense confirmed
-%   relief at 0.56-1.15 km on the rising bed of the grounding zone, where
-%   flexure works the base but where slope-break topography is an equally
-%   available reading. The visible keel height understates the fracture:
+%   instead. WHAT THE MAP FINDS, in the driver's own x_sea frame (origin
+%   at the centre of the first valid 500 m admittance block, see below):
+%   isolated keels at x_sea ~2.04 km (6.6 m, all four segments) and
+%   ~2.69-2.74 km (5.9-7.6 m, three to four segments, crossing adjacent
+%   corridors), plus smaller confirmed features near 2.96 and 3.50 km,
+%   and dense confirmed relief at ~0.31-0.90 km on the rising bed of the
+%   grounding zone, where flexure works the base but where slope-break
+%   topography is an equally available reading. Against the soft-E* band
+%   at x_sea 2.25-3.25 km the co-location is PARTIAL: the ~2.7 km keel
+%   lies inside the band, while the deepest keel at ~2.04 km sits at the
+%   band's landward edge, about 0.2 km outside it. So the crevasses are
+%   consistent with driving the seaward softening without the alignment
+%   being one-to-one. The visible keel height understates the fracture:
 %   a 7 m open keel in a 290 m column cuts D by only ~7%, so the
 %   patch-scale softening requires the weakened zone to extend well above
 %   what the pick can see, which is ordinary for basal crevasses.
@@ -29,6 +35,15 @@ function OUT = basal_crevasse_map(opts)
 %   are different days, so pick noise and off-nadir clutter do not repeat
 %   while geometry does. Everything else is reported as unconfirmed
 %   texture.
+%
+%   THE ALONG-TRACK FRAME. x_sea here is the SAME coordinate the driver's
+%   gps_profile assigns to the elasticity products: seaward distance on
+%   GL3's main-pass axis with the origin at the CENTRE OF THE FIRST VALID
+%   500 m ADMITTANCE BLOCK, replicated below from the multipass ref_z
+%   exactly as elastic_modulus.m computes it. Anchoring at the track
+%   endpoint instead would slide everything ~0.25 km seaward of the frame
+%   the soft-E* band was read in, and the co-location claim would be made
+%   across two different rulers.
 %
 %   The soft-E* band drawn on the profile panel is x_sea 2.25-3.25 km,
 %   the mid-line dip of elasticity_map.m - marked as context, and only
@@ -63,16 +78,51 @@ SOFT  = [2.25 3.25];                 % km, the marginal mid-line E* dip
 Pfirn = vdef.firnColumn(vdef.defaultParams());
 ps = projcrs(3031);
 
-%% Reference along-track frame: GL3's main pass, x_sea = 0 at the NORTH end
+%% Reference along-track frame: GL3's main pass, in the DRIVER's x_sea
+% Replicates elastic_modulus.m gps_profile block for block: 200-sample
+% (500 m) blocks of the main pass, a block VALID when at least MIN_PASS
+% passes carry a finite block mean and the tide regression is solvable,
+% orientation from the latitudes of the first and last valid blocks, and
+% the origin at the centre of the first valid block on the grounding
+% (north) end. Everything drawn or printed in x_sea below shares the
+% elasticity figures' ruler because it IS their ruler.
+BLOCK = 200; MIN_PASS = 5;
 D = load(fullfile(MP,'EAGER_2022_GL3_multipass03.mat'),'pass','param_multipass');
 mi = D.param_multipass.multipass.baseline_master_idx;
 rlat = D.pass(mi).lat(:); rlon = D.pass(mi).lon(:);
 ralong = D.pass(mi).along_track(:);
-clear D;
-% Latitude decides which end is north (greater latitude = north here)
-if rlat(1) > rlat(end), rx_sea = ralong - ralong(1);
-else,                   rx_sea = ralong(end) - ralong;
+Nx = numel(D.pass(mi).ref_z); Np = numel(D.pass);
+Z = nan(Nx, Np); tide = nan(1, Np);
+for k = 1:Np
+  z = D.pass(k).ref_z(:);
+  if numel(z) ~= Nx, continue; end
+  Z(:,k)  = z;
+  tide(k) = mean(z, 'omitnan');
 end
+clear D;
+nbk = floor(Nx/BLOCK);
+okb = false(nbk,1); xbv = nan(nbk,1); latv = nan(nbk,1);
+for b = 1:nbk
+  idx = (b-1)*BLOCK+1 : b*BLOCK;
+  zb  = mean(Z(idx,:), 1, 'omitnan');
+  okp = isfinite(zb) & isfinite(tide);
+  if nnz(okp) < MIN_PASS, continue; end
+  X = [ones(nnz(okp),1), tide(okp).'];
+  if rcond(X.'*X) < 1e-12, continue; end
+  okb(b)  = true;
+  xbv(b)  = mean(ralong(idx), 'omitnan');
+  latv(b) = mean(rlat(idx),   'omitnan');
+end
+clear Z;
+assert(any(okb), 'no valid admittance block on the GL3 reference line');
+fb = find(okb,1,'first'); lb = find(okb,1,'last');
+if latv(fb) > latv(lb), sgn = +1; ref = xbv(fb);
+else,                   sgn = -1; ref = xbv(lb);
+end
+rx_sea = sgn * (ralong - ref);
+fprintf(['x_sea frame: origin at the centre of GL3''s first valid %d-sample ' ...
+         'block (%.0f m from the track end), as elastic_modulus gps_profile\n'], ...
+        BLOCK, min(abs(ref - ralong(1)), abs(ralong(end) - ref)));
 [rxk, ryk] = ps_km(ps, rlon, rlat);
 
 %% Per segment: basal elevation, traverse splitting, incision candidates
@@ -83,12 +133,26 @@ for s = 1:numel(SEGS)
   B = load(fullfile(LB,seg,sprintf('Data_%s_001.mat',seg)));
   Qb = load(fullfile(LB,seg,sprintf('layer_%s.mat',seg)));
   nb = cellfun(@char,Qb.lyr_name,'uni',0);
-  tb = B.twtt(B.id == Qb.lyr_id(strcmp(nb,'bottom')), :).';
+  jb = find(strcmp(nb,'bottom'), 1);
+  rb = []; if ~isempty(jb), rb = find(B.id == Qb.lyr_id(jb), 1); end
+  if isempty(rb)
+    fprintf('%s: layer "bottom" not in the tracked product (have: %s) - segment skipped\n', ...
+      seg, strjoin(nb, ', '));
+    continue;
+  end
+  tb = B.twtt(rb, :).';
 
   A = load(fullfile(LA,seg,sprintf('Data_%s_001.mat',seg)));
   Qa = load(fullfile(LA,seg,sprintf('layer_%s.mat',seg)));
   na = cellfun(@char,Qa.lyr_name,'uni',0);
-  ts = interp1(A.gps_time(:), A.twtt(A.id==Qa.lyr_id(strcmp(na,'surface')),:).', ...
+  ja = find(strcmp(na,'surface'), 1);
+  ra = []; if ~isempty(ja), ra = find(A.id == Qa.lyr_id(ja), 1); end
+  if isempty(ra)
+    fprintf('%s: layer "surface" not in %s (have: %s) - segment skipped\n', ...
+      seg, LA, strjoin(na, ', '));
+    continue;
+  end
+  ts = interp1(A.gps_time(:), A.twtt(ra,:).', ...
                B.gps_time(:), 'linear', 'extrap');
   ev = interp1(A.gps_time(:), A.elev(:), B.gps_time(:), 'linear', 'extrap');
 
@@ -102,7 +166,7 @@ for s = 1:numel(SEGS)
   %   - the turnaround arcs sit up to 200 m off the line, and the
   %     projection clamps them all onto the reference track's ENDPOINTS,
   %     so four days of arc garbage stacked into repeatable-looking
-  %     clusters at x_sea 0.0 and 4.8;
+  %     clusters at the two track ends;
   %   - the tracked bed fails SHALLOW by 100+ m at the turnarounds and
   %     toward the grounding end (h down to ~55 m against a 240-295 m
   %     column) - those are pick failures, not geometry;
@@ -125,7 +189,8 @@ for s = 1:numel(SEGS)
   hmad = 1.4826*mad_(h(isfinite(h)));
   good = isfinite(zb) & doff < 260 & along_line ...    % a leg, not an arc
        & abs(h - hmed) < 5*max(hmad, 1) ...            % pick is sane
-       & xsall > 150 & xsall < max(rx_sea) - 150;      % off the endpoints
+       & xsall > min(rx_sea) + 150 ...                 % off the endpoints
+       & xsall < max(rx_sea) - 150;
   zb(~good) = NaN;
 
   % Split into continuous traverses at the gaps the mask just opened (and
@@ -145,9 +210,9 @@ for s = 1:numel(SEGS)
     % A FIXED amplitude floor, deliberately with NO sigma multiplier. A
     % per-traverse robust sigma SELF-MASKS a crevasse field: mid-line the
     % traverse's own keels inflate sigma to 1.6-2.5 m, a 4-sigma bar to
-    % 6-10 m, and the 5-7.6 m incisions at 2.29 and 2.95 km - present in
-    % every segment that crosses them, repeating to <30 m - fall exactly
-    % under it. Pick noise between same-corridor repeats is well under a
+    % 6-10 m, and the 5-7.6 m incisions at x_sea ~2.04 and ~2.70 km -
+    % present in every segment that crosses them, repeating to <30 m -
+    % fall exactly under it. Pick noise between same-corridor repeats is well under a
     % metre (the four segments agree on each keel's amplitude to ~0.5 m),
     % so the floor guards against ripple and the CROSS-SEGMENT gate below
     % is the real false-positive control.
@@ -195,6 +260,7 @@ end
 conf = [K.nseg] >= 2;
 fprintf('\n%d candidate clusters, %d CONFIRMED in >=2 segments:\n', ...
   numel(K), nnz(conf));
+fprintf('(x_sea in the elastic_modulus gps_profile frame, the elasticity figures'' axis)\n');
 fprintf('%9s %8s %8s %6s %28s\n','x_sea km','amp m','width m','nseg','segments');
 [~, order] = sort([K.xsea]);
 for i = order
@@ -264,7 +330,8 @@ for i = find(conf)
   plot(axp, K(i).xsea/1e3, ylp(2)-1.0, 'v', 'MarkerSize', 7, ...
     'MarkerFaceColor', PAL.div_neg, 'MarkerEdgeColor', 'none');
 end
-ylim(axp, ylp); xlim(axp, [-0.2 5.2]);
+XLP = [min(rx_sea) max(rx_sea)]/1e3 + [-0.2 0.2];
+ylim(axp, ylp); xlim(axp, XLP);
 grid(axp,'on'); box(axp,'on');
 set(axp,'XTickLabel',[],'XColor',PAL.ink,'YColor',PAL.ink);
 ylabel(axp,'Basal elevation (m)','Color',PAL.ink);
@@ -283,7 +350,7 @@ for i = find(~conf)
   plot(axh, K(i).xsea/1e3, K(i).amp, 'o', 'MarkerSize', 4, ...
     'MarkerEdgeColor', [0.7 0.7 0.7], 'LineWidth', 0.7);
 end
-xlim(axh, [-0.2 5.2]);
+xlim(axh, XLP);
 amax = 1; if ~isempty(K), amax = max([K.amp]); end
 ylim(axh, [0 amax*1.15]);
 grid(axh,'on'); box(axh,'on');

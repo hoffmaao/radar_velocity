@@ -56,7 +56,10 @@ PASS_NAMES = {'EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
 MAX_BASELINE = 10;
 
-% ApRES facts for GA04, from the pair npz files (fit_used_mask, bed_depth_m)
+% ApRES facts for GA04, from the pair npz files (fit_used_mask, bed_depth_m).
+% CONVENTION: APRES_MM is the vsr slope over 101-224 m quoted in this
+% project's 100 m convention - mean strain x 100 m, mm per metre of tide -
+% the same convention the radar's standard 0-100 m number uses.
 AP_TOP = 101; AP_BOT = 224; AP_BED = 251;
 APRES_MM = -1.24; APRES_SE = 0.04;
 GA04_XY = [276157.9055130380, -1318017.617914339];   % EPSG:3031 m
@@ -107,11 +110,20 @@ ps = projcrs(3031);
 fprintf('\nGA04 at %.2f km along, %.2f km off the line\n', along_m/1e3, off_m/1e3);
 
 %% THE TEST: the same place, two depth intervals
+% ONE quantity throughout this comparison: mean strain over the interval,
+% quoted in the 100 m convention (strain x 100 m, mm per metre of tide).
+% one_line returns thickness change over the interval - strain times the
+% interval's own thickness - so each radar row is rescaled by
+% 100/(interval thickness) before anything is compared; APRES_MM is
+% already quoted in this convention (see its definition above).
 fprintf('\n=== the decisive comparison, at GA04''s position ===\n');
-fprintf('%-26s %10s %9s\n','quantity','mm/m','sigma');
+fprintf('(every row: mean strain x 100 m, in mm per metre of tide)\n');
+fprintf('%-26s %10s %9s\n','quantity','mm/m tide','sigma');
+TH = [100, AP_BOT - AP_TOP];
 v = nan(1,2); e = nan(1,2);
 for j = 1:2
   [v(j), e(j)] = stack_at(R, j, along_m/1e3);
+  v(j) = v(j) * 100/TH(j); e(j) = e(j) * 100/TH(j);
   fprintf('%-26s %+10.2f %9.2f\n', LBL{j}, v(j), e(j));
 end
 fprintf('%-26s %+10.2f %9.2f\n','ApRES GA04 (101-224 m)', APRES_MM, APRES_SE);
@@ -131,9 +143,10 @@ else
   fprintf('no coverage over 101-224 m at that position\n');
 end
 if all(isfinite(v))
-  fprintf('ratio (ApRES-matched / standard) = %+.2f; pure bending about a\n', v(2)/v(1));
-  fprintf('  neutral plane at %.0f m predicts %+.2f\n', AP_BED/2, ...
-    ((AP_TOP+AP_BOT)/2 - AP_BED/2) / ((0+100)/2 - AP_BED/2));
+  fprintf('mean-strain ratio (ApRES-matched / standard) = %+.2f; pure bending\n', v(2)/v(1));
+  fprintf('  about a neutral plane at %.0f m predicts %+.2f (both sides are\n', ...
+    AP_BED/2, ((AP_TOP+AP_BOT)/2 - AP_BED/2) / ((0+100)/2 - AP_BED/2));
+  fprintf('  mean-strain ratios, so the lever arms compare like with like)\n');
 end
 
 %% The profile: locate the neutral plane from the radar alone

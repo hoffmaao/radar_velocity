@@ -48,7 +48,7 @@ addpath(root);                                   % +vdef
 addpath(fullfile(root,'scripts','diagnostics')); % the inversion driver
 
 if ~isfield(opts,'out_dir') || isempty(opts.out_dir)
-  opts.out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures';
+  opts.out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures_flexure';
 end
 if ~isfield(opts,'h_sweep') || isempty(opts.h_sweep)
   opts.h_sweep = 200:25:400;

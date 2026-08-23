@@ -701,14 +701,18 @@ function Ec = crossing(E, Jp, thr, k0, dirn)
 %CROSSING Where the profiled misfit first rises through thr, walking out
 %   from the minimum. Linear in log E between grid points; NaN if the walk
 %   reaches the end of the grid still below the threshold, which says the
-%   data do not bound the modulus on that side.
+%   data do not bound the modulus on that side. Grid entries whose profile
+%   could not be evaluated are stepped over without becoming the
+%   interpolation anchor, so the bound always sits between two FINITE
+%   points of the profile.
 Ec = NaN;
 n  = numel(E);
 k  = k0;
+kn = k0;
 while true
-  kn = k + dirn;
+  kn = kn + dirn;
   if kn < 1 || kn > n, return; end
-  if ~isfinite(Jp(kn)), k = kn; continue; end
+  if ~isfinite(Jp(kn)), continue; end
   if Jp(kn) >= thr
     f  = (thr - Jp(k)) / (Jp(kn) - Jp(k));
     f  = min(max(f, 0), 1);

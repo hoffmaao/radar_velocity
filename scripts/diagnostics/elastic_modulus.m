@@ -344,8 +344,13 @@ function hspec = bed_profile(S, spec, opts)
 %   rather than by index or by gps_time, which is what picks the right leg
 %   out of the four: the legs are 120-213 m apart while the layer sampling
 %   is ~15 m along track, so the nearest point is always on the correct
-%   leg. Achieved match distances are a few metres, and a block whose
-%   points sit further away than MAX_MATCH is dropped rather than filled.
+%   leg. The block MEDIAN is then taken over an along/across-track CAPSULE
+%   about the block centre - half a block (~250 m) along the line's own
+%   bearing but only MAX_CROSS (~60 m) across it - rather than a Euclidean
+%   disc, whose 250 m radius would reach the adjacent leg corridors and
+%   mix their bed picks into this leg's median. Achieved match distances
+%   are a few metres, and a block whose nearest point sits further away
+%   than MAX_MATCH is dropped rather than filled.
 %
 %   SCREENING. About 13% of the picks fail outright, mostly at the
 %   turnarounds and toward the grounding end where the basal return
@@ -357,6 +362,8 @@ function hspec = bed_profile(S, spec, opts)
 %   region where the pick just failed. That is an ASSUMPTION, and it lands
 %   exactly where the clamp is, so it is reported per line.
 MAX_MATCH = 60;      % m; blocks matched further away than this are dropped
+MAX_CROSS = 60;      % m; cross-track half-width of the block capsule, well
+                     % under the 120-213 m leg separation
 N_MAD     = 5;       % robust outlier cut on the depth samples
 MIN_FRAC  = 0.25;    % fraction of a block's samples that must survive
 
@@ -418,10 +425,21 @@ for b = 1:nb
   if ~isfinite(bx(b)) || ~isfinite(by(b)), continue; end
   d2 = (lx - bx(b)).^2 + (ly - by(b)).^2;
   % The block spans opts.block samples of track; take every layer point
-  % within half a block of it rather than the single nearest, so the
-  % thickness is a block mean like the admittance it will be fitted to.
+  % within half a block ALONG the line rather than the single nearest, so
+  % the thickness is a block mean like the admittance it will be fitted
+  % to - but only within MAX_CROSS ACROSS it, so the median stays on this
+  % leg's corridor. The local bearing comes from the nearest other block
+  % centre; a block with no finite neighbour cannot orient a capsule and
+  % is dropped like an unmatched one.
   half = 0.5 * opts.block * 2.5;
-  sel  = d2 <= half^2;
+  db2 = (bx - bx(b)).^2 + (by - by(b)).^2;
+  db2(b) = inf; db2(~isfinite(db2)) = inf;
+  [dn2, jn] = min(db2);
+  if ~isfinite(dn2), continue; end
+  tvx = (bx(jn) - bx(b))/sqrt(dn2); tvy = (by(jn) - by(b))/sqrt(dn2);
+  dal = (lx - bx(b))*tvx + (ly - by(b))*tvy;
+  dcr = -(lx - bx(b))*tvy + (ly - by(b))*tvx;
+  sel = abs(dal) <= half & abs(dcr) <= MAX_CROSS;
   if ~any(sel), continue; end
   dm(b) = sqrt(min(d2));
   if dm(b) > MAX_MATCH, continue; end
