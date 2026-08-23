@@ -69,6 +69,11 @@ jobs:
         run: |
           octave --no-gui --eval "try, test_invert_network; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
 
+      - name: Elastic beam flexure (forward and modulus inversion)
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, test_beam_flexure; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
       - name: vvel_task end to end
         working-directory: opr_vvel/test
         run: |
