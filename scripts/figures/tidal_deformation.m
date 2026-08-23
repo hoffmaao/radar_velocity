@@ -108,7 +108,7 @@ PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
 REF_DEPTHS    = [100 200];  % [m] column depths over which strain is measured
 MAIN_DEPTH    = 2;          % which of those drives the per-line panels (b), (c)
-SUMMARY_DEPTH = 1;          % which drives the cross-line summary (the robust one)
+SUMMARY_DEPTH = 1;          % which drives the printed hinge table (the robust one)
 MIN_OBS       = 10;         % below this a block's correlation is drawn hollow
 MAX_BASELINE  = 10;         % [m] cross-track baseline above which a pair is dropped
 
