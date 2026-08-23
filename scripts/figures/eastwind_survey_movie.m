@@ -8,6 +8,11 @@
 %     bottom  the radar system position, moving as time advances, over the
 %             three days of surveying
 %
+%   Beside the map panel, in the figure margin, sit three STATIC locator
+%   insets - the true-scale nested chain survey_locator.m defines as its
+%   panels (a)-(c); see the locator-insets block below and that file for
+%   the rationale.
+%
 %   NO PANEL TITLES OR IN-PLOT LABELS: the axis labels carry it, and any
 %   naming belongs in the slide or caption, same convention as the other
 %   figures in this repo. The only text in a frame is the axis labels,
@@ -148,7 +153,7 @@ axstyle = {'GridAlpha',0.15,'XColor',ink,'YColor',ink,'Box','off'};
 % Panel positions are literal and never touched again
 % The survey is a narrow NE-SW strip, so under equal aspect a full-width map
 % axes is mostly blank. The map gets a tall narrow box matching the strip and
-% the context inset sits beside it, which keeps the two panels one above the
+% the locator insets sit beside it, which keeps the two panels one above the
 % other while using the space.
 axT = axes('parent',h,'Position',[0.10 0.72 0.86 0.21]);
 % The survey is a tall narrow NE-SW strip, so the map panel is shaped to

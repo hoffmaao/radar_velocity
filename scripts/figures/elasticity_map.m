@@ -345,7 +345,7 @@ end
 % The three map helpers below are copied verbatim from admittance_map.m,
 % following the project's existing convention of duplicating
 % rema_underlay per figure script rather than sharing a path-dependent
-% helper (see also tidal_deformation.m, eastwind_survey_movie.m).
+% helper (see also survey_locator.m, eastwind_survey_movie.m).
 
 %% ========================================================================
 function [xk, yk] = ps_km(ps, lon, lat)
