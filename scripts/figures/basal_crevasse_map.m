@@ -46,7 +46,7 @@ function OUT = basal_crevasse_map(opts)
 %   GL3's main-pass axis with the origin at the CENTRE OF THE FIRST VALID
 %   500 m ADMITTANCE BLOCK, replicated below from the multipass ref_z
 %   exactly as elastic_modulus.m computes it. Anchoring at the track
-%   endpoint instead would slide everything ~0.25 km seaward of the frame
+%   endpoint instead would slide everything ~0.56 km seaward of the frame
 %   the soft-E* band was read in, and the co-location claim would be made
 %   across two different rulers.
 %
