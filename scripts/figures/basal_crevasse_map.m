@@ -7,18 +7,23 @@ function OUT = basal_crevasse_map(opts)
 %   the bed tracker picks the deepest coherent return so the weakened
 %   section still reads as full thickness - the weakness lands in E*
 %   instead. WHAT THE MAP FINDS, in the driver's own x_sea frame (origin
-%   at the centre of the first valid 500 m admittance block, see below):
-%   isolated keels at x_sea ~2.04 km (6.6 m, all four segments) and
-%   ~2.69-2.74 km (5.9-7.6 m, three to four segments, crossing adjacent
-%   corridors), plus smaller confirmed features near 2.96 and 3.50 km,
-%   and dense confirmed relief at ~0.31-0.90 km on the rising bed of the
-%   grounding zone, where flexure works the base but where slope-break
-%   topography is an equally available reading. Against the soft-E* band
-%   at x_sea 2.25-3.25 km the co-location is PARTIAL: the ~2.7 km keel
-%   lies inside the band, while the deepest keel at ~2.04 km sits at the
-%   band's landward edge, about 0.2 km outside it. So the crevasses are
-%   consistent with driving the seaward softening without the alignment
-%   being one-to-one. The visible keel height understates the fracture:
+%   at the centre of the first valid 500 m admittance block - 563 m in
+%   from the GL3 track end, because the 320 m leftover partial block sits
+%   at this end; verified against the driver's stored x_flip_ref to
+%   sub-metre): isolated keels at x_sea 1.73 km (6.6 m, all four
+%   segments) and 2.38-2.43 km (5.9-7.6 m, three to four segments,
+%   crossing adjacent corridors), plus smaller confirmed features at 2.64
+%   and 3.19 km, and dense confirmed relief at 0.00-0.59 km on the rising
+%   bed of the grounding zone, where flexure works the base but where
+%   slope-break topography is an equally available reading. Against the
+%   soft-E* band at x_sea 2.25-3.25 km the co-location is PARTIAL: the
+%   2.38-2.43 km keel and the 2.64 km feature lie inside the band, while
+%   the deepest keel at 1.73 km sits 0.5 km landward of it - though the
+%   band itself is smoothed by the 1 km patch width, so a keel there
+%   still loads the patches at the band's landward edge. The crevasses
+%   are consistent with driving the seaward softening without the
+%   alignment being one-to-one. The visible keel height understates the
+%   fracture:
 %   a 7 m open keel in a 290 m column cuts D by only ~7%, so the
 %   patch-scale softening requires the weakened zone to extend well above
 %   what the pick can see, which is ordinary for basal crevasses.
@@ -210,7 +215,7 @@ for s = 1:numel(SEGS)
     % A FIXED amplitude floor, deliberately with NO sigma multiplier. A
     % per-traverse robust sigma SELF-MASKS a crevasse field: mid-line the
     % traverse's own keels inflate sigma to 1.6-2.5 m, a 4-sigma bar to
-    % 6-10 m, and the 5-7.6 m incisions at x_sea ~2.04 and ~2.70 km -
+    % 6-10 m, and the 5-7.6 m incisions at x_sea 1.73 and 2.38-2.43 km -
     % present in every segment that crosses them, repeating to <30 m -
     % fall exactly under it. Pick noise between same-corridor repeats is well under a
     % metre (the four segments agree on each keel's amplitude to ~0.5 m),
