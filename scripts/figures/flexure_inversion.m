@@ -68,6 +68,7 @@ end
 L = D.lines; R = D.fits; CASE = 1;               % primary (joint) case
 nL = numel(L);
 OUT = D;
+avg_w = D.block * 2.5;                           % the width the fits used
 
 %% Thickness sweep for panel (d)
 % A coarser modulus grid than the diagnostic uses: this panel is about the
@@ -83,7 +84,7 @@ for i = 1:nL
   ok = isfinite(L(i).a) & isfinite(L(i).a_std) & L(i).a_std > 0;
   for q = 1:numel(opts.h_sweep)
     qopts = struct('h', opts.h_sweep(q), 'sigma', L(i).a_std(ok), ...
-                   'avg_width', 500, 'E_grid', E_SWEEP, ...
+                   'avg_width', avg_w, 'E_grid', E_SWEEP, ...
                    'x0_grid', R{CASE,i}.x0_grid);
     qopts = with_line_strain(qopts, L(i));
     Rq = vdef.invertElasticModulus(L(i).x_sea(ok), L(i).a(ok), qopts);
@@ -142,7 +143,7 @@ if ~isempty(ib)
   % and on this panel it would be read as rival minima.
   R0 = R{CASE,ib};
   okb = isfinite(L(ib).a) & isfinite(L(ib).a_std) & L(ib).a_std > 0;
-  bopts = struct('h', R0.h_spec, 'sigma', L(ib).a_std(okb), 'avg_width', 500, ...
+  bopts = struct('h', R0.h_spec, 'sigma', L(ib).a_std(okb), 'avg_width', avg_w, ...
                  'E_grid', logspace(log10(R0.E/8), log10(R0.E*8), 61), ...
                  'x0_grid', R0.x0 + (-1500:50:1500));
   bopts = with_line_strain(bopts, L(ib));
@@ -242,6 +243,6 @@ function o = with_line_strain(o, Li)
 %WITH_LINE_STRAIN Attach a line's englacial strain dataset, when it has one.
 if isfield(Li,'s_x') && numel(Li.s_x) >= 3
   o.strain = struct('x', Li.s_x, 'y', Li.s_y, 'sigma', Li.s_sig, ...
-                    'ref_depth', 100, 'avg_width', 500);
+                    'ref_depth', 100, 'avg_width', o.avg_width);
 end
 end

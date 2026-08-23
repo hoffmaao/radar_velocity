@@ -78,7 +78,8 @@ function OUT = elastic_modulus(opts)
 %
 %   Returns OUT.lines (the a(x) profiles) and OUT.fits (one inversion per
 %   thickness case per line), so the figure reuses the numbers rather than
-%   refitting them.
+%   refitting them. OUT.block echoes the block size the fits used, so
+%   figure-side refits block-average at the same width as these fits.
 %
 %   Run on the server:
 %     /opt/sw/matlab/2024b/bin/matlab -batch \
@@ -285,7 +286,8 @@ fprintf(['\nThe intervals above are per-line and formal. On a window this ' ...
          'not carry is anything the lines disagree about - quote the ' ...
          'spread alongside them.\n']);
 
-OUT = struct('lines', L, 'fits', {Rall}, 'E', Efit, 'cases', {H_CASES(:,1)});
+OUT = struct('lines', L, 'fits', {Rall}, 'E', Efit, ...
+             'cases', {H_CASES(:,1)}, 'block', opts.block);
 
 end
 

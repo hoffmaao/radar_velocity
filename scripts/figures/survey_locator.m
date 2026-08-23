@@ -1,18 +1,18 @@
 %SURVEY_LOCATOR Honest nested zoom from Antarctica to the EAGER survey.
 %
-%   WHY THIS EXISTS. The movie carries a continent-scale locator inset with
-%   a box on it, and that box is deliberately NOT to scale: the survey is
-%   about 5 km across against a 5500 km continent, so a true-scale box
-%   would be under one pixel. The movie inflates it to 350 km purely so it
-%   is visible, and says so in a comment. That is a reasonable compromise
-%   inside a movie frame, but it means the one figure that answers "where
-%   is this?" answers it with a box a hundred times too big.
+%   WHY THIS EXISTS. No single locator box can answer "where is this?" to
+%   scale: the survey is about 5 km across against a 5500 km continent, so
+%   a true-scale box on a continent panel would be under one pixel. The
+%   answer has to be built in STEPS, and this figure is where that
+%   true-scale nested chain is defined. The movie's locator insets draw
+%   the same chain - its comments cross-reference this file - after its
+%   old single continent inset, which inflated its box about a hundredfold
+%   just to be visible, was replaced by these steps.
 %
-%   This figure does the same job honestly, by zooming in STEPS. Every box
-%   here is TRUE SCALE; the readability that the movie bought by inflating
-%   one box is bought here by using three panels and connector lines
-%   instead. The zoom factors are ~55x then ~18x, which is what it takes to
-%   get from a continent to a 5 km line without a step where the box
+%   Every box here is TRUE SCALE; the readability an inflated box would
+%   buy is bought instead with intermediate panels and connector lines.
+%   The zoom factors are ~55x then ~18x, which is what it takes to get
+%   from a continent to a 5 km line without a step where the box
 %   vanishes.
 %
 %     (a) Antarctica, LIMA 240 m.        Box = (b), 400 km  -> 7% of frame

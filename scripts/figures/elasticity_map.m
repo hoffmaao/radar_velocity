@@ -62,6 +62,7 @@ else
 end
 L = D.lines; R = D.fits; CASE = 1;
 nL = numel(L);
+avg_w = D.block * 2.5;                           % the width the fits used
 
 % Same gate as elasticity_results: bounded AND the beam describes the
 % line's own flexure data.
@@ -84,13 +85,13 @@ for i = 1:nL
   ok = isfinite(L(i).a) & isfinite(L(i).a_std) & L(i).a_std > 0;
   xa = L(i).x_sea(ok); ya = L(i).a(ok); sa = L(i).a_std(ok);
 
-  base = struct('h', Rg.h_spec, 'sigma', sa, 'avg_width', 500, ...
+  base = struct('h', Rg.h_spec, 'sigma', sa, 'avg_width', avg_w, ...
     'E_grid', logspace(log10(Rg.E/12), log10(Rg.E*12), 31), ...
     'x0_grid', Rg.x0);
   hasS = Rg.has_strain;
   if hasS
     base.strain = struct('x', L(i).s_x, 'y', L(i).s_y, ...
-      'sigma', L(i).s_sig, 'ref_depth', 100, 'avg_width', 500);
+      'sigma', L(i).s_sig, 'ref_depth', 100, 'avg_width', avg_w);
   end
 
   % Control observations: the global fit's own predictions plus the
