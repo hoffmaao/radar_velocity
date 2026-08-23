@@ -380,8 +380,101 @@ reported strain rates and velocities are converted to per-year.
   once, under a sum(x) = 0 datum (no privileged reference epoch) with
   robust rejection of inconsistent pairs; the fit residuals are the
   closure errors. Unit test: `scripts/test_invert_network.m`.
+- `vdef.beamFlexure` - the grounding zone as an Euler-Bernoulli beam of
+  varying thickness on a hydrostatic foundation,
+  `d2/dx2[D(x) w''] = rho_w g (A0 - w)` after Holdsworth (1969), solved by
+  central differences with the beam clamped landward and flat at the
+  far-field seaward boundary. Nondimensionalised by the flexural length and
+  row-equilibrated, because a biharmonic operator on a few hundred nodes
+  otherwise loses most of its digits.
+- `vdef.invertElasticModulus` - least-squares inversion of an observed
+  flexure profile for the effective Young's modulus `E*`, after Elgart,
+  Minchew and Meyer (2025). See 'Effective elasticity' below. Unit test:
+  `scripts/test_beam_flexure.m`.
 - `vdef.forwardDisplacement`, `vdef.legendreBasis` - forward model and
   basis.
+
+### Effective elasticity from tidal flexure
+
+`vdef.invertElasticModulus` fits the beam above to a measured profile of
+tidal surface deflection and returns the single effective elastic
+parameter `E*` that minimises the misfit. The driver is
+`scripts/diagnostics/elastic_modulus.m`, which inverts the GPS surface
+tidal admittance `a(x)` of each calibrated leg against the tracked-bed
+thickness `h(x)` - the OPR layer_tracker bed run over the four main-pass
+segments, validated to ~2 m against the ApRES bed at GA10 - with the
+BedMachine pseudo-layer and two constant ApRES/radar thicknesses kept as
+bracket cases. It prints and returns fits;
+`scripts/figures/flexure_inversion.m` calls it and draws them, so the
+inversion has one implementation and the plot another and neither can
+drift. Its four panels are the observation and the fit, the misfit surface
+over `E*` and clamp position, the misfit profiled over clamp position in
+units of the data variance, and `E*` against assumed thickness.
+`scripts/figures/elasticity_results.m` is the results companion: the
+fitted beams, the tracked-bed `h(x)` against BedMachine and the ApRES bed
+depths, and a forest of `E*` against the published estimates (Vaughan
+1995; Sayag and Worster 2013; Elgart and others 2025; laboratory ice).
+
+The primary fit is JOINT with the englacial strain admittance - the
+radar's own dh(100 m) per metre of tide, loaded by
+`scripts/diagnostics/load_strain_admittance.m` through the same network
+inversion and reference-invariant fit as the admittance map. The beam
+predicts it as `amp * nu/(1-nu) * (z_n*zr - zr^2/2) * w''(x)` with the
+SAME shared amplitude as the deflection fit, and that coupling is the
+point: the line-mean normalised `a(x)` constrains only the beam's shape,
+while the strain admittance is absolute and its curvature scale goes as
+`D^(-1/2)` - an amplitude equation the surface expression cannot supply,
+which is what closes the `E*`-clamp trade-off on a window that never
+sees the far field (asserted in `test_beam_flexure.m`, check 11). Two
+things the joint fit is honest about by construction: it REFUSES to run
+without shape sigmas, because with unweighted shape rows the shared
+amplitude is set by the strain and the constraint silently cancels; and
+it reports per-dataset reduced chi-squareds, so englacial strain beyond
+thin-plate bending shows up as `X2s` above 1 rather than vanishing into
+a pooled variance.
+
+LOCAL `E*(x)` is available through the inverter's `E_patch` mode (the
+searched modulus applies only inside a window, via the exact
+`D = E h^3` equivalence) and drawn by `scripts/figures/elasticity_map.m`,
+which runs a constant-truth control through the identical pipeline
+beside the data. Flexure is nonlocal, so nothing is resolved below the
+~1.2 km flexural length, and the constraint dies seaward where moment
+and curvature both vanish - on this line the map is meaningful over
+roughly the first two kilometres and honestly unconstrained beyond,
+which the per-patch intervals and the control both show
+(`test_beam_flexure.m`, check 12).
+
+Three parameters, two of them searched. `E*` and the landward boundary
+`x0` are found on a grid and then by a pattern search - the same role
+MATLAB's `patternsearch` plays in Elgart and others, written out so that
+it needs no toolbox and behaves identically in Octave. The far-field
+amplitude enters linearly and is eliminated in closed form at every trial,
+which is what lets a profile with an arbitrary overall scale be inverted:
+`a(x)` here is normalised by a line mean rather than by the tide, because
+this survey never reaches freely floating ice, and only the SHAPE is being
+fitted.
+
+Four things about the result that are not caveats but part of it:
+
+- **`E*` is only ever `E*h^3`.** Flexure constrains the rigidity, so a 10%
+  thickness error is a 33% modulus error. The driver runs three thickness
+  cases and reports the achieved exponent, which comes out at -3.00.
+- **It is not the Young's modulus of ice.** Surface flexure does not
+  separate bending of the ice from bending of the bed beneath it, or from
+  the anelastic part of the response at tidal frequency. Elgart and others
+  find 0.6-9 GPa across three Ross sites, against ~9 GPa in the laboratory.
+- **This survey is a partial window.** The line spans ~4.8 km inside the
+  flexure zone and reaches neither flat end, so `x0` sits outside the data
+  and trades off against `E*`. On synthetic data with that exact geometry
+  the fit lands tens of percent off, with an interval seven times wider
+  than the same method achieves on a full profile. A TIGHT interval on this
+  geometry is the thing to distrust.
+- **Block means are modelled as block means.** `a(x)` is a mean over a
+  500 m block and the deflection is curved on the scale of a flexural
+  length, so the block mean is not the value at the block centre. Left
+  uncorrected that bias runs an order of magnitude above the formal error
+  on `a(x)`, and it does not announce itself as a bad fit. `opts.avg_width`
+  is what turns it off.
 
 ### Sign conventions
 
@@ -432,9 +525,10 @@ docker run --rm --platform linux/amd64 -v "$PWD":/work -w /work/scripts \
   gnuoctave/octave:latest octave --no-gui synthetic_vertical_velocity.m
 ```
 
-Figures land in `figs/`. The surface-reference, tide-admittance and
-network-inversion tests run the same way, with `test_surface_reference.m`,
-`test_tide_admittance.m` or `test_invert_network.m` in place of the script
+Figures land in `figs/`. The surface-reference, tide-admittance,
+network-inversion and beam-flexure tests run the same way, with
+`test_surface_reference.m`, `test_tide_admittance.m`,
+`test_invert_network.m` or `test_beam_flexure.m` in place of the script
 name; the OPR adapter's end-to-end test has its own command in
-`opr_vvel/README.md`. CI (`.github/workflows/tests.yml`) runs all five
+`opr_vvel/README.md`. CI (`.github/workflows/tests.yml`) runs all six
 entrypoints in Octave on every push.

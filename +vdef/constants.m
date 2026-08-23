@@ -15,4 +15,11 @@ C.eps_ice  = 3.15;         % relative permittivity of solid ice (OPR er_ice)
 C.kovacs_a = 0.845;        % Kovacs et al. (1995): n = 1 + a*rho [rho in g/cm^3]
 C.sec_per_year = 365.25*86400;
 
+% Used only by the flexure model. rho_sea is the standard ice-shelf cavity
+% value; the flexure solution depends on it through the foundation modulus
+% rho_sea*g, and a fitted rigidity scales as rho_sea, so a 1% error in it is
+% a 1% error in D and a 1% error in E* - far below the other uncertainties.
+C.rho_sea  = 1028;         % density of seawater [kg/m^3]
+C.g        = 9.81;         % gravitational acceleration [m/s^2]
+
 end

@@ -22,7 +22,9 @@ It refuses to start unless the environment matches
 MATLAB version), then rebuilds multipass for GL1-GL4, verifies the
 rebuilds bit-identical to the archive, rebuilds every vvel variant the
 standing analyses read (main / sequential / all-pairs / 2.5 km blocks /
-master-override), and reruns all diagnostics and figures. Per-stage logs
+master-override), and reruns the standing diagnostics and figures - the
+exact list is the stage header of `reproduce_all.sh`; scripts outside it
+(the elasticity chain, the maps, the movie) are run manually. Per-stage logs
 land in `.../vvel/logs/repro_*.log`, the summary in `reproduce_all.log`,
 and `reproduce_all_done` appears at the end. Idempotent: finished outputs
 are skipped, so rerunning after an interruption resumes. Every vvel

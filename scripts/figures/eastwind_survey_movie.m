@@ -8,6 +8,11 @@
 %     bottom  the radar system position, moving as time advances, over the
 %             three days of surveying
 %
+%   Beside the map panel, in the figure margin, sit three STATIC locator
+%   insets - the true-scale nested chain survey_locator.m defines as its
+%   panels (a)-(c); see the locator-insets block below and that file for
+%   the rationale.
+%
 %   NO PANEL TITLES OR IN-PLOT LABELS: the axis labels carry it, and any
 %   naming belongs in the slide or caption, same convention as the other
 %   figures in this repo. The only text in a frame is the axis labels,
@@ -36,9 +41,11 @@
 TMD_DIR   = '/kucresis/scratch/hoffmana_sta/scripts/TMD';
 GIS_DIR   = '/kucresis/scratch/hoffmana_sta/vvel/gis';
 GL_SHP    = fullfile(GIS_DIR,'GroundingLine_Antarctica_v02.shp');
+% LIMA 240 m, used ONLY for the continent inset ("where in Antarctica").
+% The map panel and the neighbourhood inset are both REMA.
 LIMA_TIF  = fullfile(GIS_DIR,'lima','tiff_90pct','00000-20080319-092059124.tif');
 % REMA v2 mosaic hillshade (10 m browse, tile 17_33, EPSG:3031) under the
-% survey map; the 240 m LIMA stays for the continent locator inset only
+% map panel and the neighbourhood inset.
 REMA_TIF  = fullfile(GIS_DIR,'rema','17_33_10m_v2.0_browse.tif');
 CATS      = fullfile(TMD_DIR,'usapdc_601772','CATS2008_v2023.nc');
 MP_DIR    = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
@@ -47,10 +54,10 @@ PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
               'EAGER_2022_GL3','EAGER_2022_GL4'};
 
 STEP_MIN  = 3;      % [min] animation time step
-FPS       = 16;     % was 40; 2.5x slower playback, same frames
+FPS       = 24;     % 40 -> 16 (2.5x slower) -> 24 (1.5x faster again)
 N_TIDE_PT = 12;     % points across the array that the mean tide averages over
-LIMA_DEC  = 20;     % decimation when reading LIMA for the continent inset
 ZOOM_OUT  = 1.15;   % how far to pull the map back from the survey extent
+LIMA_DEC  = 20;     % decimation for the continent inset
 
 addpath(TMD_DIR);
 if ~exist(OUT_DIR,'dir'), mkdir(OUT_DIR); end
@@ -89,8 +96,8 @@ fprintf('window %s to %s UTC (%.2f days)\n', ...
 %% Local map frame, equal scale
 alllat = [P.lat]; alllon = [P.lon];
 % EPSG:3031 Antarctic Polar Stereographic, in km - the standard Antarctic
-% frame, and the one the REMA tile, the LIMA inset and the MEaSUREs
-% grounding line all already ship in. NOTE at lon ~168 E the 3031 grid
+% frame, and the one the REMA tile and the MEaSUREs grounding line
+% already ship in. NOTE at lon ~168 E the 3031 grid
 % runs ~168 deg from local north, so north points roughly DOWN on the map
 % panel.
 lat0 = mean(alllat,'omitnan'); lon0 = mean(alllon,'omitnan');
@@ -114,8 +121,8 @@ spread = max(max(Z,[],1) - min(Z,[],1));
 fprintf('mean tide range %.3f m; max spread across the array %.3f m\n', ...
   max(tide)-min(tide), spread);
 
-%% Context layers: grounding line and LIMA imagery
-% The MEaSUREs grounding line ships in EPSG:3031 metres, and so does LIMA, and
+%% Context layers: grounding line
+% The MEaSUREs grounding line ships in EPSG:3031 metres, and
 % the main panel is now in that same grid, so both layers are used as-is - no
 % lat/lon round trip, no resampling.
 [gx_km, gy_km] = deal([], []);
@@ -135,28 +142,6 @@ catch ME
   fprintf('grounding line unavailable (%s)\n', ME.message);
 end
 
-% Survey extent in EPSG:3031, and the whole continent from LIMA, decimated,
-% for a small locator inset. The point of the inset is "where in Antarctica",
-% so it is continent scale rather than a regional view.
-[aoi_x, aoi_y] = projfwd(projcrs(3031), alllat, alllon);
-aoi_x = aoi_x/1e3; aoi_y = aoi_y/1e3;   % km, EPSG:3031
-[cx, cy] = projfwd(projcrs(3031), lat0, lon0);
-lima_ok = false;
-try
-  ginfo = geotiffinfo(LIMA_TIF);
-  px = abs(ginfo.PixelScale(1));
-  x_min = ginfo.BoundingBox(1,1); y_max = ginfo.BoundingBox(2,2);
-  IM = imread(LIMA_TIF, 'PixelRegion', ...
-    {[1 LIMA_DEC ginfo.Height],[1 LIMA_DEC ginfo.Width]});
-  lima_x = (x_min + [0 ginfo.Width-1]*px)/1e3;    % km, EPSG:3031
-  lima_y = (y_max - [0 ginfo.Height-1]*px)/1e3;
-  lima_ok = true;
-  fprintf('LIMA continent inset %d x %d px (decimated %dx)\n', ...
-    size(IM,1), size(IM,2), LIMA_DEC);
-catch ME
-  fprintf('LIMA unavailable (%s)\n', ME.message);
-end
-
 %% Figure: build every graphics object ONCE, then only update data
 ink = [0 0 0]; ink_soft = [0.45 0.45 0.45];   % ink: all axis text
 accent = [0.165 0.471 0.839];   % #2a78d6
@@ -168,7 +153,7 @@ axstyle = {'GridAlpha',0.15,'XColor',ink,'YColor',ink,'Box','off'};
 % Panel positions are literal and never touched again
 % The survey is a narrow NE-SW strip, so under equal aspect a full-width map
 % axes is mostly blank. The map gets a tall narrow box matching the strip and
-% the context inset sits beside it, which keeps the two panels one above the
+% the locator insets sit beside it, which keeps the two panels one above the
 % other while using the space.
 axT = axes('parent',h,'Position',[0.10 0.72 0.86 0.21]);
 % The survey is a tall narrow NE-SW strip, so the map panel is shaped to
@@ -224,6 +209,12 @@ half_y = max(ZOOM_OUT*(max(sy_km)-min(sy_km))/2, ...
 half_x = half_y * panel_aspect;
 xlim(axM, mx + [-half_x half_x]);
 ylim(axM, my + [-half_y half_y]);
+% Printed so it can be checked against survey_locator.m, whose panel (d)
+% must be this same view for the true-scale box drawn in its panel (c) to
+% mean anything.
+fprintf(['map panel extent: x %.2f..%.2f km, y %.2f..%.2f km ' ...
+         '(%.2f x %.2f km)\n'], mx-half_x, mx+half_x, my-half_y, my+half_y, ...
+        2*half_x, 2*half_y);
 xlabel(axM, 'Polar stereographic x (km, EPSG:3031)','Color',ink);
 ylabel(axM, 'Polar stereographic y (km, EPSG:3031)','Color',ink);
 
@@ -234,46 +225,102 @@ if rema_underlay(axM, REMA_TIF)
   grid(axM, 'off');
 end
 
-% LIMA context inset, inside the bottom panel so the two panel positions
-% the user specified are untouched. Static: it never updates per frame.
-if lima_ok
-  % Small locator tucked into the bottom left of the map panel, so the figure
-  % stays two panels rather than three.
-  % TOP-right corner of the map panel. It used to sit bottom-right, which
-  % was clear in the old north-up tangent frame; in EPSG:3031 the view is
-  % rotated ~168 deg and the grounding line now runs through that corner,
-  % so the locator moved to the top-right, which the tracks and the
-  % grounding line both leave empty.
-  axI = axes('parent',h,'Position',[axM_pos(1)+axM_pos(3)-0.113, ...
-    axM_pos(2)+axM_pos(4)-0.113, 0.105, 0.105]);
-  image(axI, lima_x, lima_y, IM);
-  set(axI,'YDir','normal'); hold(axI,'on'); axis(axI,'equal');
-  % AOI bounding box rather than a point marker.
-  %
-  % HONESTY ABOUT THE SCALE: the survey is about 5 km across and this inset
-  % spans the whole continent, roughly 5500 km, so a true-scale box would be
-  % about a thousandth of the panel - well under one pixel, and invisible.
-  % The box is therefore grown to a minimum on-screen size. It marks WHERE
-  % the survey is, not how big it is; the main panel carries the real
-  % extent, and the box is deliberately square so nobody reads its shape as
-  % the survey's footprint.
-  % The inset spans ~5500 km in ~130 px, so about 42 km per pixel: a 200 km
-  % box came out 5 px and read as a dot. 350 km is ~8 px, which reads as a
-  % square outline, and is still a small fraction of the continent.
-  MIN_BOX_KM = 350;
-  bx0 = mean([min(aoi_x) max(aoi_x)]); by0 = mean([min(aoi_y) max(aoi_y)]);
-  bhw = max((max(aoi_x)-min(aoi_x))/2, MIN_BOX_KM/2);
-  bhh = max((max(aoi_y)-min(aoi_y))/2, MIN_BOX_KM/2);
-  bhw = max(bhw, bhh); bhh = bhw;
-  box_x = bx0 + [-bhw  bhw bhw -bhw -bhw];
-  box_y = by0 + [-bhh -bhh bhh  bhh -bhh];
-  % White underlay first: LIMA is bright in places and dark in others, so a
-  % single-colour outline is not reliably legible on its own
-  plot(axI, box_x, box_y, '-', 'Color', 'w', 'LineWidth', 3.0);
-  plot(axI, box_x, box_y, '-', 'Color', hot, 'LineWidth', 1.6);
-  xlim(axI, sort(lima_x)); ylim(axI, sort(lima_y));
-  set(axI,'XTick',[],'YTick',[],'Box','on','XColor',ink,'YColor',ink,'LineWidth',1);
+% ---- locator insets: continent -> region -> neighbourhood -------------
+% The same chain survey_locator.m draws as panels (a)-(c), stacked in the
+% empty margin to the LEFT of the map panel. Read top to bottom they answer
+% "where in Antarctica", then narrow twice into the map beside them.
+%
+% DELIBERATELY OUTSIDE THE MAP AXES. They used to be drawn inside it, which
+% put static furniture on top of the very scene the radar marker and its
+% trail move through - the animated content had to be routed around them,
+% and any change to the view risked the tracks running underneath. Sitting
+% in the figure margin they cannot occlude the moving scene or be occluded
+% by it, whatever the map extent does. The margin is dead space otherwise,
+% and the insets get more pixels there (135 px rather than 95) so every
+% box reads better too.
+%
+% EVERY BOX IS TRUE SCALE, and it is the intermediate steps that make that
+% possible. The old single continent inset had to inflate its box about a
+% hundredfold - 5 km on 5482 km is under one pixel - because it tried to
+% make the whole jump at once. Split into steps, the SMALLEST box here is
+% still ~7% of its inset, so nothing needs inflating and every box means
+% exactly what it looks like.
+REGION_KM = 400;   % must match survey_locator.m REGION_KM
+LOCAL_KM  = 30;    % must match survey_locator.m LOCAL_KM
+INS_X = 0.10;   INS_W = 0.15;          % left margin, aligned with the tide
+INS_Y = [0.45 0.28 0.11];              % top to bottom, clear of both panels
+assert(INS_X + INS_W < axM_pos(1), ...
+  'locator insets overlap the map axes: they must stay outside the animated scene');
+
+icx = (min(sx_km)+max(sx_km))/2;  icy = (min(sy_km)+max(sy_km))/2;
+REGION = [icx-REGION_KM/2, icx+REGION_KM/2, icy-REGION_KM/2, icy+REGION_KM/2];
+LOCAL  = [icx-LOCAL_KM/2,  icx+LOCAL_KM/2,  icy-LOCAL_KM/2,  icy+LOCAL_KM/2];
+AOIBOX = [mx-half_x, mx+half_x, my-half_y, my+half_y];
+
+% (a) Antarctica. ALL of it must be in frame: the inset axes is square but
+% LIMA spans 5482 x 4657 km, so the window is built explicitly square on
+% the longer side and centred rather than left to aspect resolution. The
+% padding falls outside the raster, so the axes background is set to
+% LIMA's own nodata black and the join is invisible.
+try
+  gi = geotiffinfo(LIMA_TIF);
+  lpx = abs(gi.PixelScale(1));
+  LIM = imread(LIMA_TIF, 'PixelRegion', ...
+    {[1 LIMA_DEC gi.Height],[1 LIMA_DEC gi.Width]});
+  lxk = (gi.BoundingBox(1,1) + [0 gi.Width-1]*lpx)/1e3;
+  lyk = (gi.BoundingBox(2,2) - [0 gi.Height-1]*lpx)/1e3;
+  axA = axes('parent',h,'Position',[INS_X INS_Y(1) INS_W INS_W]);
+  image(axA, lxk, lyk, LIM); set(axA,'YDir','normal'); hold(axA,'on');
+  inset_box(axA, REGION, hot);
+  lxs = sort(lxk); lys = sort(lyk);
+  % 3% margin: sized on the longer side alone the continent lands EXACTLY
+  % on the frame, which both looks pinched and makes the coverage test a
+  % floating-point coin toss (it failed on the x edges at 0% margin).
+  halfL = max(diff(lxs), diff(lys))/2 * 1.03;
+  xlim(axA, mean(lxs) + halfL*[-1 1]); ylim(axA, mean(lys) + halfL*[-1 1]);
+  style_inset(axA, ink);
+  % Explicit black backdrop rather than the axes Color: the padding above
+  % and below the raster rendered WHITE through 'Color','k', so the join
+  % with LIMA's own nodata black was a visible seam. A patch behind the
+  % image does not depend on how the axes background is resolved.
+  xl_ = xlim(axA); yl_ = ylim(axA);
+  pb = patch(axA, 'XData', xl_([1 2 2 1]), 'YData', yl_([1 1 2 2]), ...
+    'FaceColor','k', 'EdgeColor','none');
+  uistack(pb, 'bottom');
+  tol = 1e-6*halfL;
+  covers = lxs(1) >= xl_(1)-tol && lxs(2) <= xl_(2)+tol && ...
+           lys(1) >= yl_(1)-tol && lys(2) <= yl_(2)+tol;
+  fprintf(['inset (a) Antarctica: %.0f km square window, whole continent ' ...
+           'inside: %d, box %.1f%% of frame\n'], 2*halfL, covers, ...
+          100*REGION_KM/(2*halfL));
+  if ~covers, warning('continent inset does not contain the full LIMA extent'); end
+
+  % (b) the region, from the same LIMA
+  [IM2, rx, ry] = lima_window(LIMA_TIF, gi, REGION, 1);
+  axB = axes('parent',h,'Position',[INS_X INS_Y(2) INS_W INS_W]);
+  image(axB, rx, ry, IM2); set(axB,'YDir','normal'); hold(axB,'on');
+  inset_box(axB, LOCAL, hot);
+  xlim(axB, REGION(1:2)); ylim(axB, REGION(3:4));
+  style_inset(axB, ink);
+  fprintf('inset (b) region: %.0f km, box %.1f%% of frame\n', ...
+    REGION_KM, 100*LOCAL_KM/REGION_KM);
+catch ME
+  fprintf('LIMA insets unavailable (%s)\n', ME.message);
 end
+
+% (c) the neighbourhood, REMA, carrying the map panel's own extent
+axC = axes('parent',h,'Position',[INS_X INS_Y(3) INS_W INS_W]);
+hold(axC,'on');
+xlim(axC, LOCAL(1:2)); ylim(axC, LOCAL(3:4));
+rema_underlay(axC, REMA_TIF);
+if ~isempty(gx_km) && any(isfinite(gx_km))
+  plot(axC, gx_km, gy_km, '-', 'Color', [0.10 0.10 0.10], 'LineWidth', 1.2);
+end
+inset_box(axC, AOIBOX, hot);
+xlim(axC, LOCAL(1:2)); ylim(axC, LOCAL(3:4));
+style_inset(axC, ink);
+fprintf('inset (c) neighbourhood: %.0f km, box %.1f%% x %.1f%% of frame\n', ...
+  LOCAL_KM, 100*2*half_x/LOCAL_KM, 100*2*half_y/LOCAL_KM);
 
 %% Render
 % PREVIEW_ONLY writes ONE frame as a png and stops, for checking layout and
@@ -344,6 +391,43 @@ else
   close(v);
   d = dir(out_fn);
   fprintf('wrote %s (%.1f MB, %.0f s at %d fps)\n', out_fn, d.bytes/1e6, numel(tt)/FPS, FPS);
+end
+
+%% ========================================================================
+function [IM, xk, yk] = lima_window(tif, gi, ext_km, dec)
+%LIMA_WINDOW Read LIMA whole (ext_km empty) or over an EPSG:3031 km window.
+px = abs(gi.PixelScale(1));
+x0 = gi.BoundingBox(1,1); y1 = gi.BoundingBox(2,2);
+if isempty(ext_km)
+  r = [1 dec gi.Height]; c = [1 dec gi.Width];
+  xk = (x0 + [0 gi.Width-1]*px)/1e3;
+  yk = (y1 - [0 gi.Height-1]*px)/1e3;
+else
+  c0 = max(1, floor((ext_km(1)*1e3 - x0)/px));
+  c1 = min(gi.Width,  ceil((ext_km(2)*1e3 - x0)/px));
+  r0 = max(1, floor((y1 - ext_km(4)*1e3)/px));
+  r1 = min(gi.Height, ceil((y1 - ext_km(3)*1e3)/px));
+  r = [r0 dec r1]; c = [c0 dec c1];
+  xk = (x0 + ([c0 c1]-0.5)*px)/1e3;
+  yk = (y1 - ([r0 r1]-0.5)*px)/1e3;
+end
+IM = imread(tif, 'PixelRegion', {r, c});
+end
+
+%% ========================================================================
+function inset_box(ax, ext, col)
+% True-scale extent box. White underlay first so it reads on both bright
+% imagery and dark hillshade.
+x = ext([1 2 2 1 1]); y = ext([3 3 4 4 3]);
+plot(ax, x, y, '-', 'Color','w', 'LineWidth', 2.6);
+plot(ax, x, y, '-', 'Color',col, 'LineWidth', 1.4);
+end
+
+%% ========================================================================
+function style_inset(ax, ink)
+% Common inset styling: true scale, no ticks, thin frame.
+set(ax,'DataAspectRatio',[1 1 1],'XTick',[],'YTick',[],'Box','on', ...
+  'XColor',ink,'YColor',ink,'LineWidth',1);
 end
 
 %% ========================================================================
