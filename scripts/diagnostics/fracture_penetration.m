@@ -55,7 +55,10 @@ function OUT = fracture_penetration(opts)
 %     .out_dir    where the png goes
 %     .net_dir    all-pairs vvel products
 %     .mp_dir     multipass products (for the SLC amplitude slices)
-%     .fit_mat    flexure_fit.mat, source of each line's x_sea frame
+%     .fit        OUT struct from elastic_modulus, used directly
+%     .fit_mat    a saved elastic_modulus OUT (as `save(fn,'OUT')`), source
+%                 of each line's x_sea frame. When neither .fit nor this
+%                 file is there, elastic_modulus is run here instead.
 %     .half_win   half-width of a target/control column window [m]
 %                 (default 150 - spans the 30-60 m keels with margin
 %                 while staying well inside the 500 m block)
@@ -67,6 +70,7 @@ function OUT = fracture_penetration(opts)
 if nargin < 1 || isempty(opts), opts = struct(); end
 here = fileparts(mfilename('fullpath'));
 addpath(fileparts(fileparts(here)));                       % +vdef
+addpath(here);                                             % elastic_modulus
 
 if ~isfield(opts,'out_dir') || isempty(opts.out_dir)
   opts.out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures_flexure';
@@ -91,14 +95,27 @@ KEEL_H = [6.6 7.6 3.6 5.1];         % open keel heights from the tracked bed
 CTRL   = [1250 1980 2900 3600];
 MAX_BASELINE = 10;
 
-F = load(opts.fit_mat);
-L = F.OUT.lines;
+% The x_sea frame of every line comes from the elasticity driver. A saved
+% fit is read when one is there, but nothing in the repository writes that
+% file, so a fresh checkout falls back to running the driver rather than
+% dying on a bare load error - the same fallback elasticity_map uses.
+if isfield(opts,'fit') && ~isempty(opts.fit)
+  FIT = opts.fit;
+elseif exist(opts.fit_mat, 'file')
+  F = load(opts.fit_mat);
+  FIT = F.OUT;
+else
+  fprintf('%s not there - running elastic_modulus for the x_sea frames\n', ...
+    opts.fit_mat);
+  FIT = elastic_modulus(struct());
+end
+L = FIT.lines;
 
 OUT = struct('line',{},'adm_z',{},'amp',{});
 for n = 1:numel(LINES)
   pn = LINES{n};
   i  = find(strcmp({L.name}, pn), 1);
-  assert(~isempty(i), '%s not in %s', pn, opts.fit_mat);
+  assert(~isempty(i), '%s not among the elastic_modulus lines', pn);
   sgn = L(i).x_flip_sign; ref = L(i).x_flip_ref;
 
   %% ---- PHASE: depth-resolved admittance at keel vs control blocks
@@ -123,12 +140,31 @@ for n = 1:numel(LINES)
     if isfield(o,'coalign_applied') && ~o.coalign_applied, continue; end
     if max(abs(o.baseline_y)) > MAX_BASELINE, continue; end
     if isempty(depth)
-      depth = o.depth_blk(:,1);
+      % One COMMON depth axis, and every block interpolated onto it below.
+      % depth_blk is stored per block because it is depth below THAT
+      % block's own surface; over a 2.4 km corridor the axes differ, and
+      % a keel-minus-control contrast taken row by row on block 1's axis
+      % is a contrast between different depths - the one error a fracture
+      % tip bound cannot absorb. The median over blocks is the axis with
+      % the least interpolation to do.
+      depth = median(o.depth_blk, 2, 'omitnan');
       blk_xsea = sgn * (o.Along_track(:) - ref);
       Nz = numel(depth); Nb = numel(blk_xsea);
       D3 = nan(Nz, Nb, 0);
     end
-    D3(:,:,end+1) = o.dh_blk; %#ok<AGROW>
+    if size(o.dh_blk,2) ~= Nb || size(o.depth_blk,2) ~= Nb
+      fprintf('  %s: %d blocks against %d - skipped\n', f(q).name, ...
+        size(o.dh_blk,2), Nb);
+      continue;
+    end
+    dh_i = nan(Nz, Nb);
+    for b = 1:Nb
+      db = o.depth_blk(:,b); vb = o.dh_blk(:,b);
+      okb = isfinite(db) & isfinite(vb);
+      if nnz(okb) < 2, continue; end
+      dh_i(:,b) = interp1(db(okb), vb(okb), depth, 'linear', NaN);
+    end
+    D3(:,:,end+1) = dh_i; %#ok<AGROW>
     P(end+1,:) = [str2double(tok{1}), str2double(tok{2})]; %#ok<AGROW>
     W(end+1) = max(mean(o.coh_blk(:),'omitnan'),1e-3); %#ok<AGROW>
   end
@@ -236,6 +272,12 @@ for j = 1:numel(KEELS)
     c  = A.keel(:,j) - A.ctrl_mean(:,j);
     v  = A.keel_sd(:,j).^2 + A.ctrl_se(:,j).^2;
     ok = isfinite(c) & isfinite(v) & v > 0;
+    % A keel that falls off this line's block axis leaves its whole column
+    % NaN (the `continue` above), and interp1 on fewer than two samples
+    % errors - which would abort the pooling after every network inversion
+    % and every SLC read has already been paid for. That line simply does
+    % not contribute to this keel.
+    if nnz(ok) < 2, continue; end
     ci = interp1(A.depth(ok), c(ok)./v(ok), depth0, 'linear', NaN);
     vi = interp1(A.depth(ok), 1./v(ok),    depth0, 'linear', NaN);
     add = isfinite(ci) & isfinite(vi);
@@ -291,13 +333,34 @@ mi = S.param_multipass.multipass.baseline_master_idx;
 al = S.pass(mi).along_track(:);
 % Fast-time axis: the multipass product time base of the main pass
 tax = S.pass(mi).time(:);
+% Surface twtt per trace, which is what the fast-time axis has to be
+% referenced to before it means depth. Every other depthFromTwtt call site
+% in this project subtracts a surface first (verticalDisplacement takes
+% Time - blk.Surface, elastic_modulus takes tb - ts), and pass.surface is
+% a real, generally non-zero quantity. Assuming it sits at twtt 0 shifts
+% the whole amplitude profile - the 30-120 m normalisation band, the
+% >150 m basal peak search, and the tip estimate the null rests on -
+% relative to the phase probe's surface-referenced depth_blk.
+srf = [];
+if isfield(S.pass(mi),'surface') && numel(S.pass(mi).surface) == numel(al)
+  srf = S.pass(mi).surface(:);
+end
 clear S;
+
+if isempty(srf) || ~any(isfinite(srf))
+  fprintf('%s: no usable pass.surface - amplitude depths read from twtt 0\n', ...
+    short(pn));
+  srf = zeros(size(al));
+end
+srf0 = median(srf, 'omitnan');
+if ~isfinite(srf0), srf0 = 0; end
 
 xsea_col = sgn * (al - ref);
 P = vdef.firnColumn(vdef.defaultParams());
-% depth for twtt BELOW THE SURFACE; surface sits at twtt ~ 0 in these
-% products (the project's standing geometry)
-dvec = vdef.depthFromTwtt(P, max(tax, 0));
+% The reported axis, on the line's median surface. Each window's own
+% profile is interpolated onto it below, so keel minus control is a
+% difference at equal depth rather than at equal fast-time bin.
+dvec = vdef.depthFromTwtt(P, max(tax - srf0, 0));
 
 win = opts.half_win;
 tide = elev(:) - mean(elev);
@@ -312,20 +375,24 @@ for g = 1:ng
   c0 = min(cols); c1 = max(cols);
   blkd = mf.data(1:Nz, c0:c1, 1:Npass);          % contiguous partial read
   pw = squeeze(mean(abs(blkd).^2, 2, 'omitnan'));  % Nz x Npass
-  prof(:,g) = mean(pw, 2, 'omitnan');
+  pg = mean(pw, 2, 'omitnan');
+  % This window's own depth axis, from the surface its own traces see.
+  sg = mean(srf(c0:c1), 'omitnan');
+  if ~isfinite(sg), sg = srf0; end
+  dz = vdef.depthFromTwtt(P, max(tax - sg, 0));
   % SELF-NORMALISE each pass by its own shallow englacial power (30-120 m,
   % far above every keel) before the tide regression. Without this, any
   % per-pass bulk gain that happens to correlate with the tide - and GL4's
   % does, at +14 to +17 dB/m IDENTICALLY at every position, which is a
   % calibration signature, not physics - reads as pumping. With it, only
   % power changes CONFINED to the basal return survive.
-  nb = dvec > 30 & dvec < 120 & isfinite(prof(:,g));
+  nb = dz > 30 & dz < 120 & isfinite(pg);
   pnorm = mean(pw(nb,:), 1, 'omitnan');
   pwn = pw ./ pnorm;
   % Basal peak: strongest return below 150 m, NaN-safe - a plain
   % max(mp .* mask) returns NaN's index the moment the profile has one.
-  mp = prof(:,g);
-  mp(~isfinite(mp) | dvec <= 150) = -Inf;
+  mp = pg;
+  mp(~isfinite(mp) | dz <= 150) = -Inf;
   [~, ib] = max(mp);
   band = max(1, ib-3) : min(Nz, ib+3);
   bp = 10*log10(squeeze(mean(pwn(band,:), 1, 'omitnan'))).';
@@ -336,6 +403,13 @@ for g = 1:ng
     r = bp(ok) - X*beta;
     Cv = (sum(r.^2)/(nnz(ok)-2)) * ((X.'*X) \ eye(2));
     base_slope(g) = beta(2); base_se(g) = sqrt(abs(Cv(2,2)));
+  end
+  % Onto the reported axis. Bins at or above the surface all map to depth
+  % 0, so they are dropped rather than handed to interp1 as repeated
+  % sample points.
+  uz = tax > sg & isfinite(dz) & isfinite(pg);
+  if nnz(uz) >= 2
+    prof(:,g) = interp1(dz(uz), pg(uz), dvec, 'linear', NaN);
   end
 end
 
@@ -371,7 +445,8 @@ end
 %% ========================================================================
 function draw_summary(OUT, KEELS, KEEL_H, opts)
 %DRAW_SUMMARY The focused block view: one adm(z, x) section per line over
-%   the keel corridor, keel positions ticked, plus the on-keel ladders
+%   the keel corridor, keel positions ticked and labelled with their open
+%   heights from the tracked bed, plus the on-keel ladders
 %   with their local-control bands. Sections share one diverging scale so
 %   the lines read against each other; cells whose fit uncertainty
 %   exceeds SD_CAP are blanked rather than drawn as confident colour.
@@ -398,6 +473,14 @@ for n = 1:nL
   set(ax,'YDir','reverse'); hold(ax,'on');
   for j = 1:numel(KEELS)
     plot(ax, [1 1]*KEELS(j)/1e3, [0 12], 'k-', 'LineWidth', 2);
+    if n == 1
+      % The open keel height at each incision - the quantity the ~7%
+      % rigidity argument turns on, so the figure carries it rather than
+      % leaving it to the caption. Staggered because the 2.41 and 2.64 km
+      % keels are only 235 m apart on this axis.
+      text(ax, KEELS(j)/1e3, 18 + 14*mod(j,2), sprintf('%.1f m', KEEL_H(j)), ...
+        'FontSize', 7, 'Color', 'k', 'HorizontalAlignment', 'center');
+    end
   end
   colormap(ax, dmap); caxis(ax, [-CLIM CLIM]);
   ylim(ax, [0 280]); xlim(ax, [min(A.bx) max(A.bx)]/1e3);

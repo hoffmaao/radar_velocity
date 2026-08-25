@@ -50,6 +50,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # The fitted values this project measured, used so the drawn curves are
 # the real solution rather than a sketch.
 E_STAR = 3.90e9          # Pa, joint GNSS + englacial strain, GL1/GL3/GL4
+X0_STAR = -750.0         # m, fitted clamp position in the seaward frame
 NU = 0.3
 RHO_W = 1028.0
 G = 9.81
@@ -218,7 +219,9 @@ def panel_c(ax_w, ax_s):
     # englacial: the curvature, absolute, in mm per metre of tide
     zn = H_ICE / 2.0
     k2 = (NU / (1 - NU)) * (zn * ZR - ZR ** 2 / 2)
-    dh = 1e3 * k2 * d2w / np.mean(w[obs])
+    # no line-mean division here: unlike a(x) this observable is absolute,
+    # which is the whole reason it supplies the amplitude equation
+    dh = 1e3 * k2 * d2w
     ax_s.plot(x, dh, "-", color=BLUE, lw=2.0)
     ax_s.axhline(0, color=INK_SOFT, lw=0.7, ls=":")
     ax_s.axvline(0, color=INK, lw=1.6)
@@ -239,19 +242,21 @@ def panel_d(ax):
     EE, XX = np.meshgrid(Eg, x0)
     # The valley: E* and clamp trade off because a stiffer beam clamped
     # further landward reproduces the same curve over a short window. The
-    # ridge follows constant l + x0, the analytic form of that trade-off.
+    # ridge follows constant l + x0, the analytic form of that trade-off,
+    # anchored on the FITTED pair so the valley floor runs through the
+    # solution the marker draws rather than past it.
     lam = (4 * (EE * H_ICE ** 3 / (12 * (1 - NU ** 2))) / (RHO_W * G)) ** 0.25
-    ridge = lam + XX
-    J = ((ridge - (4 * (E_STAR * H_ICE ** 3 / (12 * (1 - NU ** 2)))
-                   / (RHO_W * G)) ** 0.25) / 260.0) ** 2
+    lam_star = (4 * (E_STAR * H_ICE ** 3 / (12 * (1 - NU ** 2)))
+                / (RHO_W * G)) ** 0.25
+    J = (((lam + XX) - (lam_star + X0_STAR)) / 260.0) ** 2
     J += ((np.log10(EE / E_STAR)) / 1.15) ** 2 * 0.30
     ax.pcolormesh(np.log10(Eg / 1e9), x0 / 1e3, np.minimum(J, 9),
                   cmap="RdYlBu_r", shading="auto", rasterized=True)
     ax.contour(np.log10(Eg / 1e9), x0 / 1e3, J, levels=[1.0],
                colors=[INK], linewidths=1.1)
-    ax.plot(np.log10(E_STAR / 1e9), -0.75, "o", color="white",
+    ax.plot(np.log10(E_STAR / 1e9), X0_STAR / 1e3, "o", color="white",
             mec=INK, mew=1.4, ms=7)
-    ax.text(np.log10(E_STAR / 1e9) + 0.06, -0.70,
+    ax.text(np.log10(E_STAR / 1e9) + 0.06, X0_STAR / 1e3 + 0.05,
             r"$E^{*} = 3.9$ GPa", fontsize=9, color=INK)
     ax.text(-0.10, -1.34, "shape alone:\nthe valley stays open",
             fontsize=8.5, color=INK)

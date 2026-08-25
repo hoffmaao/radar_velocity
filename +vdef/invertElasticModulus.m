@@ -324,7 +324,8 @@ for e = 1:nE
   [j0, a0] = min(J(:,e));
   if ~isfinite(j0), continue; end
   [Jprof(e), X0prof(e)] = refine_x0(E_grid(e), x0_grid(a0), dx0, j0, ...
-                                    x_obs, yy, uu, Na, opts);
+                                    x_obs, yy, uu, Na, opts, ...
+                                    [x0_grid(1) x0_grid(end)]);
 end
 [Jgrid, ep] = min(Jprof);
 
@@ -507,10 +508,21 @@ R.x0_grid       = x0_grid;
 % off every edge. Judging it from the profile alone missed a pattern
 % search that had converged onto the grid boundary, which is exactly the
 % state a poorly conditioned patch fit ends in.
+%
+% The edge test carries a TOLERANCE because a clamped search approaches an
+% edge without ever landing on it: an over-running poll is rejected, the
+% step halves, and the walk converges to within 10^(dlogE/512) of the
+% boundary. A bare strict inequality calls that state interior and the
+% honest failure never gets reported. One sixty-fourth of a grid step sits
+% far below any interval this fit quotes and far above where the search
+% gives up, so it separates "pinned to the edge" from "genuinely inside".
+tolE  = dlogE/64;
+tolx0 = dx0/64;
 R.interior      = (ep > 1) && (ep < nE) && ...
-  (E_best > E_grid(1)) && (E_best < E_grid(end)) && (nx0 == 1 || ...
-  (X0prof(ep) > x0_grid(1) && X0prof(ep) < x0_grid(end) && ...
-   x0_best > x0_grid(1) && x0_best < x0_grid(end)));
+  (log10(E_best) > log10(E_grid(1))   + tolE) && ...
+  (log10(E_best) < log10(E_grid(end)) - tolE) && (nx0 == 1 || ...
+  (X0prof(ep) > x0_grid(1) + tolx0 && X0prof(ep) < x0_grid(end) - tolx0 && ...
+   x0_best    > x0_grid(1) + tolx0 && x0_best    < x0_grid(end) - tolx0));
 R.n_local_min   = nloc;
 R.curvature     = curv;
 R.n_lambda      = info.n_lambda;
@@ -662,11 +674,17 @@ V  = (WS * sw.') / sum(sw);
 end
 
 %% ========================================================================
-function [Jb, xb] = refine_x0(E, x0, step, J0, x_obs, yy, uu, Na, opts)
+function [Jb, xb] = refine_x0(E, x0, step, J0, x_obs, yy, uu, Na, opts, x0lim)
 %REFINE_X0 Best clamp position at a fixed modulus, by 1-D pattern search.
 %   Started from the best point on the x0 grid and stepped down by halves
 %   to a 64th of the grid spacing, which is metres for a grid stepped in
 %   hundreds of them.
+%
+%   CONFINED TO THE SAME x0 GRID as the (E*, x0) pattern search that starts
+%   from its result. Bounded only by the last observation, it can walk the
+%   profile's clamp outside the grid, and the later search - which is
+%   clamped - then rejects every x0 poll and freezes the clamp at a
+%   position it is not allowed to reach while it keeps optimising E*.
 Jb = J0; xb = x0;
 if step <= 0, return; end
 s = step;
@@ -675,6 +693,7 @@ for it = 1:40
   for d = [-1 1]
     xc = xb + d*s;
     if xc >= x_obs(end), continue; end
+    if xc < x0lim(1) || xc > x0lim(2), continue; end
     Wm = model_shape(xc, E, x_obs, opts);
     if isempty(Wm), continue; end
     Jv = fit_linear(Wm, yy, uu, opts.fit_offset, Na);

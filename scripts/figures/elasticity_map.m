@@ -129,11 +129,8 @@ for i = 1:nL
     % A patch whose optimum sits on a search-grid edge has no support:
     % report it as unresolved (the map's open-marker state) rather than
     % as the boundary value, which reads as a measurement.
-    if Rp.interior
-      Ei(p) = Rp.E; loi(p) = Rp.E_lo; hii(p) = Rp.E_hi;
-    else
-      Ei(p) = Rp.E; loi(p) = NaN; hii(p) = NaN;
-    end
+    Ei(p) = Rp.E;
+    if Rp.interior, loi(p) = Rp.E_lo; hii(p) = Rp.E_hi; end
     pc = po; pc.sigma = sa;
     if hasS, pc.strain.y = sc; end
     Rc = vdef.invertElasticModulus(xa, yc, pc);
