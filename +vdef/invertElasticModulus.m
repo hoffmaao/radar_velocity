@@ -62,6 +62,12 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                          over 0.05-30 GPa, spanning the published range)
 %            .x0_grid      trial landward boundaries [m], absolute (default
 %                          x0_init + (-4000:250:4000))
+%                          Both grids BOUND the search, not just start it:
+%                          the refinement moves off the lattice but never
+%                          outside its endpoints, so a fit whose optimum
+%                          lies beyond the grid comes back at the nearest
+%                          edge with R.interior false rather than as an
+%                          unsupported extrapolation.
 %            .x0_init      centre of the default x0 grid (default x_obs(1))
 %            .seaward_pad  how far past the last observation the seaward
 %                          boundary is placed, in flexural lengths
@@ -163,7 +169,12 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                           taken off the grid
 %     R.x0_profile          the clamp position each of those used - the
 %                           trade-off curve itself, and worth plotting
-%     R.interior            minimum is off every grid edge
+%     R.interior            BOTH the grid-profile minimum and the refined
+%                           optimum sit off every grid edge, within a
+%                           tolerance of a 64th of a grid step (a clamped
+%                           search approaches an edge without landing on
+%                           it). False means the answer is pinned to a
+%                           boundary and is not a measurement
 %     R.n_local_min         distinct RIVAL minima in R.J_profile: separated
 %                           from the best by a barrier of more than one data
 %                           variance, and within 9 of them of it. More than
@@ -324,7 +335,8 @@ for e = 1:nE
   [j0, a0] = min(J(:,e));
   if ~isfinite(j0), continue; end
   [Jprof(e), X0prof(e)] = refine_x0(E_grid(e), x0_grid(a0), dx0, j0, ...
-                                    x_obs, yy, uu, Na, opts);
+                                    x_obs, yy, uu, Na, opts, ...
+                                    [x0_grid(1) x0_grid(end)]);
 end
 [Jgrid, ep] = min(Jprof);
 
@@ -351,6 +363,15 @@ for it = 1:400
   Jbest = Jmin; qbest = 0;
   for q = 1:size(poll,1)
     if poll(q,2) >= x_obs(end), continue; end
+    % The pattern search is CONFINED TO THE SEARCH GRID. Unbounded, it
+    % walks out of the grid entirely on a badly conditioned fit and
+    % returns a number with no support - 125 m patch blocks produced
+    % E* of 41 TPa this way, four orders of magnitude past the grid top,
+    % while R.interior (judged from the grid profile) still looked fine.
+    % Clamped, such a fit sits at the grid edge and R.interior reports it,
+    % which is the honest failure.
+    if 10^poll(q,1) < E_grid(1) || 10^poll(q,1) > E_grid(end), continue; end
+    if poll(q,2) < x0_grid(1) || poll(q,2) > x0_grid(end), continue; end
     Wm = model_shape(poll(q,2), 10^poll(q,1), x_obs, opts);
     if isempty(Wm), continue; end
     Jv = fit_linear(Wm, yy, uu, opts.fit_offset, Na);
@@ -494,8 +515,25 @@ R.J_profile     = Jprof;
 R.x0_profile    = X0prof;
 R.E_grid        = E_grid;
 R.x0_grid       = x0_grid;
-R.interior      = (ep > 1) && (ep < nE) && (nx0 == 1 || ...
-  (X0prof(ep) > x0_grid(1) && X0prof(ep) < x0_grid(end)));
+% Interior means BOTH the grid profile minimum and the refined optimum sit
+% off every edge. Judging it from the profile alone missed a pattern
+% search that had converged onto the grid boundary, which is exactly the
+% state a poorly conditioned patch fit ends in.
+%
+% The edge test carries a TOLERANCE because a clamped search approaches an
+% edge without ever landing on it: an over-running poll is rejected, the
+% step halves, and the walk converges to within 10^(dlogE/512) of the
+% boundary. A bare strict inequality calls that state interior and the
+% honest failure never gets reported. One sixty-fourth of a grid step sits
+% far below any interval this fit quotes and far above where the search
+% gives up, so it separates "pinned to the edge" from "genuinely inside".
+tolE  = dlogE/64;
+tolx0 = dx0/64;
+R.interior      = (ep > 1) && (ep < nE) && ...
+  (log10(E_best) > log10(E_grid(1))   + tolE) && ...
+  (log10(E_best) < log10(E_grid(end)) - tolE) && (nx0 == 1 || ...
+  (X0prof(ep) > x0_grid(1) + tolx0 && X0prof(ep) < x0_grid(end) - tolx0 && ...
+   x0_best    > x0_grid(1) + tolx0 && x0_best    < x0_grid(end) - tolx0));
 R.n_local_min   = nloc;
 R.curvature     = curv;
 R.n_lambda      = info.n_lambda;
@@ -647,11 +685,17 @@ V  = (WS * sw.') / sum(sw);
 end
 
 %% ========================================================================
-function [Jb, xb] = refine_x0(E, x0, step, J0, x_obs, yy, uu, Na, opts)
+function [Jb, xb] = refine_x0(E, x0, step, J0, x_obs, yy, uu, Na, opts, x0lim)
 %REFINE_X0 Best clamp position at a fixed modulus, by 1-D pattern search.
 %   Started from the best point on the x0 grid and stepped down by halves
 %   to a 64th of the grid spacing, which is metres for a grid stepped in
 %   hundreds of them.
+%
+%   CONFINED TO THE SAME x0 GRID as the (E*, x0) pattern search that starts
+%   from its result. Bounded only by the last observation, it can walk the
+%   profile's clamp outside the grid, and the later search - which is
+%   clamped - then rejects every x0 poll and freezes the clamp at a
+%   position it is not allowed to reach while it keeps optimising E*.
 Jb = J0; xb = x0;
 if step <= 0, return; end
 s = step;
@@ -660,6 +704,7 @@ for it = 1:40
   for d = [-1 1]
     xc = xb + d*s;
     if xc >= x_obs(end), continue; end
+    if xc < x0lim(1) || xc > x0lim(2), continue; end
     Wm = model_shape(xc, E, x_obs, opts);
     if isempty(Wm), continue; end
     Jv = fit_linear(Wm, yy, uu, opts.fit_offset, Na);
