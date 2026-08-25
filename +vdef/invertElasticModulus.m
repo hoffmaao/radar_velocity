@@ -351,6 +351,15 @@ for it = 1:400
   Jbest = Jmin; qbest = 0;
   for q = 1:size(poll,1)
     if poll(q,2) >= x_obs(end), continue; end
+    % The pattern search is CONFINED TO THE SEARCH GRID. Unbounded, it
+    % walks out of the grid entirely on a badly conditioned fit and
+    % returns a number with no support - 125 m patch blocks produced
+    % E* of 41 TPa this way, four orders of magnitude past the grid top,
+    % while R.interior (judged from the grid profile) still looked fine.
+    % Clamped, such a fit sits at the grid edge and R.interior reports it,
+    % which is the honest failure.
+    if 10^poll(q,1) < E_grid(1) || 10^poll(q,1) > E_grid(end), continue; end
+    if poll(q,2) < x0_grid(1) || poll(q,2) > x0_grid(end), continue; end
     Wm = model_shape(poll(q,2), 10^poll(q,1), x_obs, opts);
     if isempty(Wm), continue; end
     Jv = fit_linear(Wm, yy, uu, opts.fit_offset, Na);
@@ -494,8 +503,14 @@ R.J_profile     = Jprof;
 R.x0_profile    = X0prof;
 R.E_grid        = E_grid;
 R.x0_grid       = x0_grid;
-R.interior      = (ep > 1) && (ep < nE) && (nx0 == 1 || ...
-  (X0prof(ep) > x0_grid(1) && X0prof(ep) < x0_grid(end)));
+% Interior means BOTH the grid profile minimum and the refined optimum sit
+% off every edge. Judging it from the profile alone missed a pattern
+% search that had converged onto the grid boundary, which is exactly the
+% state a poorly conditioned patch fit ends in.
+R.interior      = (ep > 1) && (ep < nE) && ...
+  (E_best > E_grid(1)) && (E_best < E_grid(end)) && (nx0 == 1 || ...
+  (X0prof(ep) > x0_grid(1) && X0prof(ep) < x0_grid(end) && ...
+   x0_best > x0_grid(1) && x0_best < x0_grid(end)));
 R.n_local_min   = nloc;
 R.curvature     = curv;
 R.n_lambda      = info.n_lambda;

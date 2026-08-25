@@ -62,12 +62,34 @@ else
 end
 L = D.lines; R = D.fits; CASE = 1;
 nL = numel(L);
-avg_w = D.block * 2.5;                           % the width the fits used
+% Block width the fits used. Older saved OUT structs predate this field;
+% they were all built at the 200-sample default, so fall back to it rather
+% than refusing to redraw an archived run.
+if isfield(D,'block') && ~isempty(D.block)
+  avg_w = D.block * 2.5;
+else
+  avg_w = 200 * 2.5;
+  fprintf('fit struct predates OUT.block - assuming the 500 m default\n');
+end
 
 % The averaging gate the driver computes once for both result figures
 % (see OUT.constrained in elastic_modulus). Read, not recomputed, so this
-% figure and elasticity_results cannot disagree on it.
-con = D.constrained(CASE,:);
+% figure and elasticity_results cannot disagree on it - except for saved
+% runs that predate the field, where the original criterion is applied
+% here so an archived fit can still be redrawn.
+if isfield(D,'constrained') && ~isempty(D.constrained)
+  con = D.constrained(CASE,:);
+else
+  fprintf('fit struct predates OUT.constrained - applying the gate here\n');
+  con = false(1,nL);
+  for i = 1:nL
+    Ri = R{CASE,i};
+    if isempty(Ri), continue; end
+    x2a = Ri.chi2red;
+    if Ri.has_strain && isfinite(Ri.chi2_shape), x2a = Ri.chi2_shape; end
+    con(i) = isfinite(Ri.E_hi) && isfinite(x2a) && x2a < 3;
+  end
+end
 
 rand('seed', 7); randn('seed', 7);   %#ok<RAND> % control is reproducible
 
@@ -104,7 +126,14 @@ for i = 1:nL
     po.E_patch = struct('lo', xc(p)-opts.patch_w/2, ...
                         'hi', xc(p)+opts.patch_w/2, 'E_ref', Rg.E);
     Rp = vdef.invertElasticModulus(xa, ya, po);
-    Ei(p) = Rp.E; loi(p) = Rp.E_lo; hii(p) = Rp.E_hi;
+    % A patch whose optimum sits on a search-grid edge has no support:
+    % report it as unresolved (the map's open-marker state) rather than
+    % as the boundary value, which reads as a measurement.
+    if Rp.interior
+      Ei(p) = Rp.E; loi(p) = Rp.E_lo; hii(p) = Rp.E_hi;
+    else
+      Ei(p) = Rp.E; loi(p) = NaN; hii(p) = NaN;
+    end
     pc = po; pc.sigma = sa;
     if hasS, pc.strain.y = sc; end
     Rc = vdef.invertElasticModulus(xa, yc, pc);
