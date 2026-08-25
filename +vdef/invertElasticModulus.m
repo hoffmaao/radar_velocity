@@ -62,6 +62,12 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                          over 0.05-30 GPa, spanning the published range)
 %            .x0_grid      trial landward boundaries [m], absolute (default
 %                          x0_init + (-4000:250:4000))
+%                          Both grids BOUND the search, not just start it:
+%                          the refinement moves off the lattice but never
+%                          outside its endpoints, so a fit whose optimum
+%                          lies beyond the grid comes back at the nearest
+%                          edge with R.interior false rather than as an
+%                          unsupported extrapolation.
 %            .x0_init      centre of the default x0 grid (default x_obs(1))
 %            .seaward_pad  how far past the last observation the seaward
 %                          boundary is placed, in flexural lengths
@@ -163,7 +169,12 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                           taken off the grid
 %     R.x0_profile          the clamp position each of those used - the
 %                           trade-off curve itself, and worth plotting
-%     R.interior            minimum is off every grid edge
+%     R.interior            BOTH the grid-profile minimum and the refined
+%                           optimum sit off every grid edge, within a
+%                           tolerance of a 64th of a grid step (a clamped
+%                           search approaches an edge without landing on
+%                           it). False means the answer is pinned to a
+%                           boundary and is not a measurement
 %     R.n_local_min         distinct RIVAL minima in R.J_profile: separated
 %                           from the best by a barrier of more than one data
 %                           variance, and within 9 of them of it. More than

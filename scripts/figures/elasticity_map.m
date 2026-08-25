@@ -18,6 +18,10 @@ function OUT = elasticity_map(opts)
 %       there come back unconstrained (open markers, no whiskers), which
 %       is the correct answer and the reason a full-line "map" would
 %       overstate what the survey knows.
+%     - A PATCH PINNED TO A SEARCH-GRID EDGE is drawn the same way. Its
+%       optimum lies outside the space that was searched, so the boundary
+%       value it returns is not a measurement; the map reads R.interior
+%       and shows it as unresolved rather than as a number.
 %     - A CONSTANT-TRUTH CONTROL runs beside the data: synthetic
 %       observations from the line's own global fit with the line's own
 %       sigmas, through the identical patch pipeline. Structure in the
@@ -30,7 +34,11 @@ function OUT = elasticity_map(opts)
 %   (pass the saved OUT to skip the refit), same as the other figures.
 %
 %   opts, all optional:
-%     .fit         OUT struct from elastic_modulus
+%     .fit         OUT struct from elastic_modulus. Archived structs from
+%                  before OUT.block and OUT.constrained existed are still
+%                  redrawable: the block falls back to the 200-sample
+%                  default those runs used, and the averaging gate is
+%                  applied here instead of read.
 %     .out_dir     where the png goes
 %     .patch_w     patch width [m] (default 1000)
 %     .mp_dir, .products, .block   passed through when refitting

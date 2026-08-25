@@ -452,7 +452,12 @@ amplitude enters linearly and is eliminated in closed form at every trial,
 which is what lets a profile with an arbitrary overall scale be inverted:
 `a(x)` here is normalised by a line mean rather than by the tide, because
 this survey never reaches freely floating ice, and only the SHAPE is being
-fitted.
+fitted. The pattern search refines off the lattice but stays INSIDE the
+grid it started from, so an ill-conditioned patch ends at the nearest edge
+instead of walking off into moduli the grid never proposed; `R.interior`
+then reports that edge - judged from the refined optimum, not from the
+grid profile alone - and `elasticity_map` draws such a patch as unresolved
+rather than as its boundary value (`test_beam_flexure.m`, check 13).
 
 Four things about the result that are not caveats but part of it:
 
