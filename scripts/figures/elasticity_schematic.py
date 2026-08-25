@@ -256,12 +256,21 @@ def panel_d(ax):
                colors=[INK], linewidths=1.1)
     ax.plot(np.log10(E_STAR / 1e9), X0_STAR / 1e3, "o", color="white",
             mec=INK, mew=1.4, ms=7)
+    # This is the only panel with a full-bleed colormap behind its labels,
+    # so unlike the other panels the text cannot rely on a white page for
+    # contrast: BLUE on the navy valley floor and INK on the saturated red
+    # corner both go unreadable, and the chi2 = 1 contour runs straight
+    # through two of the three. A white halo behind each label restores the
+    # light background the palette was chosen against, without moving any
+    # label off the feature it names.
+    halo = dict(facecolor="white", edgecolor="none", alpha=0.82,
+                boxstyle="round,pad=0.28")
     ax.text(np.log10(E_STAR / 1e9) + 0.06, X0_STAR / 1e3 + 0.05,
-            r"$E^{*} = 3.9$ GPa", fontsize=9, color=INK)
+            r"$E^{*} = 3.9$ GPa", fontsize=9, color=INK, bbox=halo)
     ax.text(-0.10, -1.34, "shape alone:\nthe valley stays open",
-            fontsize=8.5, color=INK)
+            fontsize=8.5, color=INK, bbox=halo)
     ax.annotate("strain adds the\namplitude equation", xy=(0.60, -0.80),
-                xytext=(0.72, -1.36), fontsize=8.5, color=BLUE,
+                xytext=(0.72, -1.36), fontsize=8.5, color=BLUE, bbox=halo,
                 arrowprops=dict(arrowstyle="->", color=BLUE, lw=1.1))
     ax.set_xlabel(r"$\log_{10} E^{*}$  (GPa)", fontsize=9)
     ax.set_ylabel("clamp position (km)", fontsize=9)
