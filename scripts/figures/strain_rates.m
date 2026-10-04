@@ -42,14 +42,21 @@
 %     /opt/sw/matlab/2024b/bin/matlab -batch "VVEL_SUFFIX='_v3'; run('.../strain_rates.m')"
 
 addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
+addpath(fileparts(mfilename('fullpath')));            % grl_figure
+addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))),'diagnostics'));  % pass_tide
 
 if ~exist('VVEL_SUFFIX','var'), VVEL_SUFFIX = '_net'; end
 vvel_dir = ['/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_vvel' VVEL_SUFFIX];
 mp_dir   = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
-out_dir  = '/kucresis/scratch/hoffmana_sta/vvel/figures';
+out_dir  = vdef.figureDir();
 
-PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
-              'EAGER_2022_GL3','EAGER_2022_GL4'};
+% The four lines, plus the duplicate build of GL1. EAGER_2022 is NOT a
+% fifth profile - it is a second build of GL1 sharing thirteen of its
+% fourteen passes (vdef.surveyLines) - but the floor computed below needs
+% two builds of the SAME ice, so it is loaded here deliberately and must
+% not be read as another line.
+[LINES, DUP] = vdef.surveyLines();
+PASS_NAMES = [{DUP.name}, LINES];
 % strain(z) = dh(z)/z divides by depth, so the shallowest bins amplify
 % their own noise; start at 50 m.
 DEPTHS       = 50:25:250;
@@ -159,12 +166,12 @@ fprintf('\nFloor / expected ratio at %.0f m: tidal %.1fx, secular %.1fx\n', ...
   FL_SEC_MM(jz)/abs(exp_sec_mm(jz)));
 
 %% Figure
-h = figure('Visible','off','Position',[100 100 1020 1180],'Color','w');
+[h, GRL] = grl_figure(140, 162.0);
 set(0,'CurrentFigure',h);
 axstyle = {'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off'};
 
 % (a) tidal squeeze against depth
-ax1 = axes('parent',h,'Position',[0.10 0.720 0.60 0.225]);
+ax1 = axes('parent',h,'Position',[0.16 0.730 0.54 0.200]);
 set(0,'CurrentFigure',h); hold(ax1,'on');
 band_x(ax1, FL_TIDE_MM, DEPTHS, PAL.band);
 plot(ax1, [0 0], [0 max(DEPTHS)], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
@@ -180,16 +187,18 @@ for i = 1:numel(res)
 end
 grid(ax1,'on'); set(ax1, axstyle{:}); set(ax1,'YDir','reverse');
 ylim(ax1,[0 max(DEPTHS)]); set_sym_xlim(ax1, [allv FL_TIDE_MM]);
-xlabel(ax1,'Column thickness change per metre of tide (mm)','Color',PAL.ink);
+xlabel(ax1,'Change per m of tide (mm)','Color',PAL.ink);
 ylabel(ax1,'Depth below surface (m)','Color',PAL.ink);
-title(ax1,'Tidal response: column thickness change when the shelf rises 1 m', ...
-  'Color',PAL.ink);
+% Titles are two short lines: the panel is 78 mm wide at 8 pt, and the
+% one-line versions ran off both edges of the page.
+title(ax1, {'Tidal response', 'column change per metre of tide'}, ...
+  'Color',PAL.ink, 'FontWeight','normal');
 lg = legend(ax1, [hleg hexp], [lbl {'flexure model'}], ...
   'Location','eastoutside','Interpreter','none');
 set(lg,'TextColor',PAL.ink,'Box','off');
 
 % (b) tidal squeeze along track
-ax2 = axes('parent',h,'Position',[0.10 0.400 0.60 0.225]);
+ax2 = axes('parent',h,'Position',[0.16 0.405 0.54 0.200]);
 set(0,'CurrentFigure',h); hold(ax2,'on');
 xmax = 0;
 for i = 1:numel(res), xmax = max(xmax, max(res(i).along)/1e3); end
@@ -206,13 +215,14 @@ for i = 1:numel(res)
 end
 grid(ax2,'on'); set(ax2, axstyle{:}); xlim(ax2,[0 xmax]);
 xlabel(ax2,'Along track (km)','Color',PAL.ink);
-ylabel(ax2, sprintf('Change per metre of tide, top %.0f m (mm)', ALONG_DEPTH),'Color',PAL.ink);
-title(ax2, sprintf('Floor %.1f mm (shaded); ApRES (rate method) %+.2f mm (solid), flexure model %+.1f mm (dashed)', ...
-  FL_TIDE_MM(jz), APRES_MM, exp_tide_mm(jz)), 'Color', PAL.ink);
+ylabel(ax2, 'Change per m of tide (mm)','Color',PAL.ink);
+title(ax2, {sprintf('Along track, top %.0f m: floor %.1f mm (shaded)', ALONG_DEPTH, FL_TIDE_MM(jz)), ...
+  sprintf('ApRES %+.2f mm (solid), flexure %+.1f mm (dashed)', APRES_MM, exp_tide_mm(jz))}, ...
+  'Color', PAL.ink, 'FontWeight','normal');
 label_band(ax2, xmax, FL_TIDE_MM(jz), PAL.ink_soft);
 
 % (c) secular change over the observation window
-ax3 = axes('parent',h,'Position',[0.10 0.080 0.60 0.225]);
+ax3 = axes('parent',h,'Position',[0.16 0.080 0.54 0.200]);
 set(0,'CurrentFigure',h); hold(ax3,'on');
 fill(ax3, [0 xmax xmax 0], [-1 -1 1 1]*FL_SEC_MM(jz), PAL.band, 'EdgeColor','none');
 plot(ax3, [0 xmax], [0 0], '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 1);
@@ -226,14 +236,14 @@ for i = 1:numel(res)
 end
 grid(ax3,'on'); set(ax3, axstyle{:}); xlim(ax3,[0 xmax]);
 xlabel(ax3,'Along track (km)','Color',PAL.ink);
-ylabel(ax3, sprintf('Change over %.1f days, top %.0f m (mm)', span_days, ALONG_DEPTH), ...
-  'Color',PAL.ink);
-title(ax3, sprintf('Steady thinning: floor is %.0f mm (shaded), expected firn compaction %.1f mm (dashed)', ...
-  FL_SEC_MM(jz), abs(exp_sec_mm(jz))), 'Color', PAL.ink);
+ylabel(ax3, 'Change over the window (mm)', 'Color',PAL.ink);
+title(ax3, {sprintf('Steady thinning over %.1f d: floor %.0f mm (shaded)', span_days, FL_SEC_MM(jz)), ...
+  sprintf('firn compaction %.1f mm (dashed)', abs(exp_sec_mm(jz)))}, ...
+  'Color', PAL.ink, 'FontWeight','normal');
 label_band(ax3, xmax, FL_SEC_MM(jz), PAL.ink_soft);
 
 out_fn = fullfile(out_dir, sprintf('EAGER_2022_strain_rates%s.png', VVEL_SUFFIX));
-print(h, out_fn, '-dpng', '-r120');
+print(h, out_fn, '-dpng', sprintf('-r%d', GRL.dpi));
 close(h);
 fprintf('\nWrote %s\n', out_fn);
 
@@ -246,7 +256,7 @@ end
 
 function label_band(ax, xmax, fl, col)
 if ~isfinite(fl), return; end
-text(ax, 0.99*xmax, fl, 'method floor ', 'Color', col, 'FontSize', 9, ...
+text(ax, 0.99*xmax, fl, 'method floor ', 'Color', col, 'FontSize', 8, ...
   'HorizontalAlignment','right','VerticalAlignment','bottom');
 end
 
@@ -326,7 +336,7 @@ for q = 1:numel(f)
     'tokens','once');
   if isempty(tok), continue; end
   o = load(fullfile(vvel_dir, f(q).name));
-  if isfield(o,'coalign_applied') && ~o.coalign_applied, continue; end
+  if ~vdef.pairAligned(o), continue; end
   if max(abs(o.baseline_y)) > MAX_BASELINE, continue; end
   if Nblk == 0
     Nblk = numel(o.S1);
@@ -354,7 +364,12 @@ end
 
 N = vdef.invertNetwork(P, D, struct('n_sigma',3,'weights',W,'n_epoch',Np));
 tday = (ptime - min(ptime))/86400;
-tide = elev - mean(elev);
+% The tide is CATS2008 at each pass mid-time, with the pass gate, from the
+% same helper the flexure inversion uses (scripts/diagnostics/pass_tide.m)
+% - NOT the line-mean GPS height, which carries a per-pass height error
+% that attenuated this admittance by 15-25% and let a 1.1 m bad pass
+% through (see vdef.surfaceAdmittance).
+tide = pass_tide(pass_name, mp_dir);
 span = max(tday) - min(tday);
 
 R = struct('name', pass_name, 'along', along, 'lat', lat, 'lon', lon, ...

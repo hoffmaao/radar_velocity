@@ -14,7 +14,9 @@
 %   2. THE CROSS-PRODUCT MEAN. The between-build matrix showed calibrated
 %      builds agree at 1.2-1.5x their formal errors, which makes averaging
 %      their line means defensible. The last table pools GL1-GL4
-%      (EAGER_2022 is excluded: wholly uncalibrated, 2.6x excess) with
+%      (EAGER_2022 is excluded twice over: it is a second build of GL1
+%      rather than an independent line - see vdef.surveyLines - and it is
+%      wholly uncalibrated, 2.6x excess) with
 %      inverse-variance weights, inflated by the measured 1.4x
 %      between-build excess so the quoted sigma is honest rather than
 %      formal.
@@ -34,8 +36,13 @@ EXCESS = 1.4;         % measured between-build excess factor, between_build.m
 SIG_APRES = -1.24;    % mm per m of tide over the top 100 m, ApRES GA04
                       % rate method (+/- 0.04), apres_rate_check.py
 
-PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
-              'EAGER_2022_GL3','EAGER_2022_GL4'};
+% The four lines, plus the duplicate build of GL1. EAGER_2022 is NOT a
+% fifth profile - it is a second build of GL1 sharing thirteen of its
+% fourteen passes (vdef.surveyLines) - but the floor computed below needs
+% two builds of the SAME ice, so it is loaded here deliberately and must
+% not be read as another line.
+[LINES, DUP] = vdef.surveyLines();
+PASS_NAMES = [{DUP.name}, LINES];
 DIRS = {fullfile(root,'CSARP_vvel_net'), '500 m blocks'; ...
         fullfile(root,'CSARP_vvel_net1k'), '2.5 km blocks'};
 
@@ -103,7 +110,7 @@ for q = 1:numel(f)
     'tokens','once');
   if isempty(tok), continue; end
   o = load(fullfile(vdir, f(q).name));
-  if isfield(o,'coalign_applied') && ~o.coalign_applied, continue; end
+  if ~vdef.pairAligned(o), continue; end
   if max(abs(o.baseline_y)) > MAX_BASELINE, continue; end
   Nblk = numel(o.S1); sv = nan(Nblk,1);
   for b = 1:Nblk

@@ -41,6 +41,7 @@ function OUT = elasticity_map(opts)
 %                  applied here instead of read.
 %     .out_dir     where the png goes
 %     .patch_w     patch width [m] (default 1000)
+%     .tag         suffix for the two .png names (default '')
 %     .mp_dir, .products, .block   passed through when refitting
 %
 %   Run on the server:
@@ -52,12 +53,14 @@ here = fileparts(mfilename('fullpath'));
 root = fileparts(fileparts(here));
 addpath(root);
 addpath(fullfile(root,'scripts','diagnostics'));
+addpath(here);                          % grl_figure, map helpers
 
 if ~isfield(opts,'out_dir') || isempty(opts.out_dir)
-  opts.out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures_flexure';
+  opts.out_dir = vdef.figureDir();
 end
 if ~isfield(opts,'patch_w') || isempty(opts.patch_w), opts.patch_w = 1000; end
 if ~isfield(opts,'fit'), opts.fit = []; end
+if ~isfield(opts,'tag') || isempty(opts.tag), opts.tag = ''; end
 
 if isempty(opts.fit)
   dopts = struct();
@@ -109,14 +112,26 @@ for i = 1:nL
   ok = isfinite(L(i).a) & isfinite(L(i).a_std) & L(i).a_std > 0;
   xa = L(i).x_sea(ok); ya = L(i).a(ok); sa = L(i).a_std(ok);
 
-  base = struct('h', Rg.h_spec, 'sigma', sa, 'avg_width', avg_w, ...
+  % The patches inherit the GLOBAL fit's dataset weights: the joint fit
+  % re-scales each dataset's sigmas from its own residuals (opts.rescale
+  % in vdef.invertElasticModulus), and re-deriving that per patch would
+  % let each patch choose its own balance between the two observables.
+  % Saved fits from before the field carry unit scales.
+  ka = 1; ks = 1;
+  if isfield(Rg,'sigma_scale_shape'),  ka = Rg.sigma_scale_shape;  end
+  if isfield(Rg,'sigma_scale_strain'), ks = Rg.sigma_scale_strain; end
+  base = struct('h', Rg.h_spec, 'sigma', sa*ka, 'avg_width', avg_w, ...
     'E_grid', logspace(log10(Rg.E/12), log10(Rg.E*12), 31), ...
     'x0_grid', Rg.x0);
   hasS = Rg.has_strain;
   if hasS
     base.strain = struct('x', L(i).s_x, 'y', L(i).s_y, ...
-      'sigma', L(i).s_sig, 'ref_depth', Rg.strain_spec.ref_depth, ...
+      'sigma', L(i).s_sig*ks, 'ref_depth', Rg.strain_spec.ref_depth, ...
       'avg_width', avg_w);
+    % the observable's interval, nuisance term and block, for fits that echo them
+    for fld = {'top_depth', 'fit_offset', 'avg_width'}
+      if isfield(Rg.strain_spec, fld{1}), base.strain.(fld{1}) = Rg.strain_spec.(fld{1}); end
+    end
   end
 
   % Control observations: the global fit's own predictions plus the
@@ -139,7 +154,7 @@ for i = 1:nL
     % as the boundary value, which reads as a measurement.
     Ei(p) = Rp.E;
     if Rp.interior, loi(p) = Rp.E_lo; hii(p) = Rp.E_hi; end
-    pc = po; pc.sigma = sa;
+    pc = po; pc.sigma = sa*ka;
     if hasS, pc.strain.y = sc; end
     Rc = vdef.invertElasticModulus(xa, yc, pc);
     Eci(p) = Rc.E;
@@ -165,7 +180,7 @@ linecol = @(nm) cols(mod(find(strcmp({'EAGER_2022_GL1','EAGER_2022_GL2', ...
   'EAGER_2022_GL3','EAGER_2022_GL4'}, nm), 1)-1, size(cols,1))+1, :);
 grey = [0.62 0.62 0.62];
 
-hf = figure('Visible','off','Position',[100 100 900 640]);
+[hf, GRL] = grl_figure(170, 120.9);
 set(0,'CurrentFigure',hf);
 
 % (a) the local modulus, with unresolved patches shown as exactly that
@@ -209,7 +224,7 @@ for i = 1:nL
 end
 if ~isempty(excl)
   text(ax1, 0.02, 0.06, sprintf('%s gated out - no patch values fitted', ...
-    strjoin(excl, ', ')), 'Units','normalized', 'FontSize', 8.5, ...
+    strjoin(excl, ', ')), 'Units','normalized', 'FontSize', 8, ...
     'Color', grey);
   fprintf('profile panels: %s gated out - annotated, no patch values\n', ...
     strjoin(excl, ', '));
@@ -232,13 +247,13 @@ title(ax2,'(b)  Where the line resolves stiffness at all');
 xl = get(ax1,'XLim'); set(ax2,'XLim', xl);
 
 if ~exist(opts.out_dir,'dir'), mkdir(opts.out_dir); end
-out_fn = fullfile(opts.out_dir,'EAGER_2022_elasticity_map.png');
-print(hf, out_fn, '-dpng', '-r140');
+out_fn = fullfile(opts.out_dir, sprintf('EAGER_2022_elasticity_map%s.png', opts.tag));
+print(hf, out_fn, '-dpng', sprintf('-r%d', GRL.dpi));
 fprintf('\nWrote %s\n', out_fn);
 
 %% Map view
 % EPSG:3031 Antarctic Polar Stereographic in km - the same frame, style
-% and conventions as admittance_map.m (marker SHAPE is line identity,
+% and conventions as tidal_response_map.m (marker SHAPE is line identity,
 % marker FILL is the value, north points roughly DOWN at lon ~168 E).
 % Fill is the log-ratio of local E* to the pooled global, diverging about
 % zero, so the map reads as softer-than / stiffer-than the line mean and
@@ -255,7 +270,7 @@ Eref = mean([P.glob]);
 fprintf('map view: diverging about the pooled global %.2f GPa\n', Eref/1e9);
 
 ps = projcrs(3031);
-h2 = figure('Visible','off','Position',[100 100 640 640],'Color','w');
+[h2, GRL] = grl_figure(170, 170.0);
 set(0,'CurrentFigure',h2);
 axm = axes('parent',h2,'Position',[0.11 0.10 0.80 0.86]);
 hold(axm,'on');
@@ -317,7 +332,7 @@ for i = 1:nL
 end
 
 % ApRES sites, from the same file the other maps use. Guarded like
-% admittance_map's read_apres_xy: a missing or malformed sites file is a
+% tidal_response_map's read_apres_xy: a missing or malformed sites file is a
 % printed note, not an abort after the expensive patch scan.
 apres_xy = '/kucresis/scratch/hoffmana_sta/vvel/gis/eastwind_2022_2023_apres_xy.txt';
 if ~exist(apres_xy,'file')
@@ -328,8 +343,14 @@ else
     for q = 1:numel(Csx{3})
       plot(axm, Csx{1}(q)/1e3, Csx{2}(q)/1e3, 'o', 'MarkerSize', 8, ...
         'MarkerFaceColor','w', 'MarkerEdgeColor', PAL.ink, 'LineWidth', 1.4);
-      text(axm, Csx{1}(q)/1e3 + 0.12, Csx{2}(q)/1e3, Csx{3}{q}, ...
-        'FontSize', 8, 'Color', PAL.ink, 'VerticalAlignment','middle');
+      % a site with a neighbour just east of it (GA04 beside GA05, 150 m
+      % apart) is labelled on its west side, so the two names do not overlap;
+      % on a white chip, as the label may then sit on a patch ribbon
+      dx = Csx{1}/1e3 - Csx{1}(q)/1e3; dy = Csx{2}/1e3 - Csx{2}(q)/1e3;
+      west = any(dx > 0 & dx < 0.6 & abs(dy) < 0.25);
+      if west, xo = -0.12; ha = 'right'; else, xo = 0.12; ha = 'left'; end
+      text(axm, Csx{1}(q)/1e3 + xo, Csx{2}(q)/1e3, Csx{3}{q}, 'FontSize', 8, 'Color', PAL.ink, ...
+        'HorizontalAlignment', ha, 'VerticalAlignment', 'middle', 'BackgroundColor', 'w', 'Margin', 0.5);
     end
     fprintf('ApRES sites drawn: %s\n', strjoin(Csx{3}.', ', '));
   catch ME
@@ -347,7 +368,7 @@ grid(axm,'on');
 set(axm,'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off');
 xlabel(axm,'Polar stereographic x (km, EPSG:3031)','Color',PAL.ink);
 ylabel(axm,'Polar stereographic y (km, EPSG:3031)','Color',PAL.ink);
-colormap(axm, dmap); caxis(axm, [-CLIMD CLIMD]);
+colormap(axm, dmap); caxis(axm, [-CLIMD CLIMD]);   %#ok<CAXIS> clim() is not in Octave 8
 cb = colorbar(axm);
 % Ticks in GPa at round values, placed at their log-ratio positions. The
 % candidates are filtered against the DATA-DEPENDENT Eref so the labels
@@ -369,105 +390,8 @@ if rema_underlay(axm, rema_tif)
   grid(axm, 'off');
 end
 
-out_fn2 = fullfile(opts.out_dir,'EAGER_2022_elasticity_map_view.png');
-print(h2, out_fn2, '-dpng', '-r140');
+out_fn2 = fullfile(opts.out_dir, sprintf('EAGER_2022_elasticity_map_view%s.png', opts.tag));
+print(h2, out_fn2, '-dpng', sprintf('-r%d', GRL.dpi));
 fprintf('Wrote %s\n', out_fn2);
-
-end
-
-%% ========================================================================
-% The three map helpers below are copied verbatim from admittance_map.m,
-% following the project's existing convention of duplicating
-% rema_underlay per figure script rather than sharing a path-dependent
-% helper (see also survey_locator.m, eastwind_survey_movie.m).
-
-%% ========================================================================
-function [xk, yk] = ps_km(ps, lon, lat)
-%PS_KM Project lon/lat to EPSG:3031 Antarctic Polar Stereographic, in km.
-[x, y] = projfwd(ps, lat, lon);
-xk = x/1e3; yk = y/1e3;
-end
-
-%% ========================================================================
-function ok = rema_underlay(ax, tif)
-%REMA_UNDERLAY Draw the REMA v2 hillshade under an EPSG:3031 axes in km.
-%   The axes are already in the raster's own projection, so the block
-%   covering the current view is read and dropped straight in - no
-%   resampling, no rotation, no reprojection. It is lifted into a light
-%   gray range so the data drawn on top stays dominant, and pushed to the
-%   bottom of the draw order. The block is padded 8% beyond the limits so
-%   a small later limit adjustment does not expose white strips. Returns
-%   false (with a message) when the tile is missing or unreadable, and
-%   the figure then renders exactly as it did without imagery.
-%
-%   The browse tif is a COG whose overview IFDs make geotiffinfo error
-%   ("multiple images ... sizes are different"), so the georeference comes
-%   from georasterinfo and the pixels from imread on IFD 1.
-ok = false;
-if ~exist(tif,'file')
-  fprintf('REMA hillshade not found (%s) - no imagery underlay.\n', tif);
-  return;
-end
-try
-  R3 = georasterinfo(tif).RasterReference;
-  xl = xlim(ax); yl = ylim(ax);                     % km, EPSG:3031
-  xg = xl + 0.08*diff(xl)*[-1 1];
-  yg = yl + 0.08*diff(yl)*[-1 1];
-  px = R3.CellExtentInWorldX;
-  py = R3.CellExtentInWorldY;                       % may differ from px
-  c0 = max(1, floor((xg(1)*1e3 - R3.XWorldLimits(1))/px));
-  c1 = min(R3.RasterSize(2), ceil((xg(2)*1e3 - R3.XWorldLimits(1))/px));
-  r0 = max(1, floor((R3.YWorldLimits(2) - yg(2)*1e3)/py));
-  r1 = min(R3.RasterSize(1), ceil((R3.YWorldLimits(2) - yg(1)*1e3)/py));
-  if c1 <= c0 || r1 <= r0
-    fprintf('REMA tile does not cover this view - no imagery underlay.\n');
-    return;
-  end
-  A = double(imread(tif, 'Index', 1, 'PixelRegion', {[r0 r1],[c0 c1]}));
-  A(A == 0) = NaN;                                  % nodata
-  vv = sort(A(isfinite(A)));
-  if isempty(vv)
-    fprintf('REMA tile is empty over this view - no imagery underlay.\n');
-    return;
-  end
-  lo = vv(max(1,round(0.02*numel(vv)))); hi = vv(round(0.98*numel(vv)));
-  g = min(max((A - lo)/max(hi-lo, 1), 0), 1);
-  g = 0.58 + 0.40*g;                                % recessive light grays
-  g(~isfinite(A)) = 1;                              % nodata as paper white
-  % cell centres of the block actually read, in km; y descends with row
-  ximg = (R3.XWorldLimits(1) + ([c0 c1] - 0.5)*px)/1e3;
-  yimg = (R3.YWorldLimits(2) - ([r0 r1] - 0.5)*py)/1e3;
-  hImg = image(ax, 'XData', ximg, 'YData', yimg, 'CData', repmat(g,[1 1 3]));
-  uistack(hImg, 'bottom');
-  xlim(ax, xl); ylim(ax, yl);
-  ok = true;
-  fprintf('REMA hillshade underlay: %d x %d px, native EPSG:3031\n', ...
-    r1-r0+1, c1-c0+1);
-catch ME
-  fprintf('REMA underlay failed (%s) - continuing without imagery.\n', ME.message);
-end
-end
-
-%% ========================================================================
-function drawn = overlay_gl(ax, gis_dir)
-drawn = false;
-fn = fullfile(gis_dir,'GroundingLine_Antarctica_v02.shp');
-if ~exist(fn,'file'), return; end
-try
-  S = shaperead(fn);
-  X = []; Y = [];
-  for k = 1:numel(S)
-    X = [X; S(k).X(:); NaN]; Y = [Y; S(k).Y(:); NaN]; %#ok<AGROW>
-  end
-  gx = X/1e3; gy = Y/1e3;      % the shapefile is already EPSG:3031 metres
-  xl = xlim(ax); yl = ylim(ax); pad = 3;
-  bad = gx < xl(1)-pad | gx > xl(2)+pad | gy < yl(1)-pad | gy > yl(2)+pad;
-  gx(bad) = NaN; gy(bad) = NaN;
-  if all(isnan(gx)), return; end
-  plot(ax, gx, gy, '-', 'Color', [0.1 0.1 0.1], 'LineWidth', 2);
-  xlim(ax, xl); ylim(ax, yl);
-  drawn = true;
-catch
-end
 
 end

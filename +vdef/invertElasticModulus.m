@@ -104,6 +104,24 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                            .sigma      1-sigma on y
 %                            .ref_depth  depth the column change is read
 %                                        at [m] (default 100)
+%                            .top_depth  depth the column change is read
+%                                        FROM [m] (default 0, the surface).
+%                                        A phase reference below the
+%                                        surface - the coherent stack's
+%                                        50 ns (~5 m) or 60 m - measures
+%                                        the change between top_depth and
+%                                        ref_depth, and the lever is
+%                                        integrated over that interval
+%                            .fit_offset also fit a constant common to
+%                                        every strain row (default false).
+%                                        For a reference in the shallow
+%                                        firn: the 5 m reference carries a
+%                                        response that is the same below
+%                                        ~40 m and along the whole line
+%                                        (scripts/figures/tidal_stack_depth.m),
+%                                        which no beam produces; the
+%                                        offset absorbs it and leaves the
+%                                        along-track structure to the beam
 %                            .avg_width  block width [m] (default
 %                                        opts.avg_width)
 %                          WHY IT HELPS, and why it is not just more
@@ -118,7 +136,8 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                          trade-off valley on a window that never sees
 %                          the far field. The prediction is thin-plate
 %                          bending only (eps_zz = nu/(1-nu)*(z_n - z)*w'',
-%                          z_n = h(x)/2); any non-flexural tidal strain in
+%                          z_n = h(x)/2, integrated from top_depth to
+%                          ref_depth); any non-flexural tidal strain in
 %                          the data lands in chi2_strain, which is the
 %                          number to check before believing the joint E*.
 %            .E_patch      LOCAL mode: struct with fields lo, hi, E_ref
@@ -139,8 +158,44 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                          length report smoothed averages - flexure is
 %                          nonlocal and that is a resolution limit, not an
 %                          implementation one.
+%            .amplitude    FIX the shared amplitude (the far-field
+%                          deflection per unit of the data) instead of
+%                          fitting it (default [] = fitted). For tidal
+%                          admittances 1 is the freely floating shelf,
+%                          which follows the tide whatever the beam does
+%            STRAIN ONLY: pass x_obs and w_obs EMPTY with opts.strain set,
+%                          and the beam is fitted to the englacial strain
+%                          alone - the radar's own estimate of E*, with no
+%                          surface deflection in it. The amplitude is then
+%                          either fitted (only the SHAPE of the curvature
+%                          profile constrains E*) or fixed with
+%                          opts.amplitude (its size constrains it too,
+%                          since curvature scales as amp/lambda^2). The
+%                          interval comes from the strain sigmas, floored
+%                          at them as for any supplied sigma
 %            .beam         extra opts passed through to vdef.beamFlexure
 %                          (.nu, .rho_w, .g)
+%            .rescale      JOINT FITS ONLY: estimate the variance of each
+%                          dataset from its own residuals and re-weight
+%                          (default false). The two observables come with
+%                          sigmas from different chains, and on the real
+%                          lines the strain rows misfit at reduced
+%                          chi-squared 2-4 while the shape rows sit at
+%                          0.1-1, so at face value the strain is weighted
+%                          twenty-odd times more than its scatter
+%                          supports. Each dataset's sigma is scaled by
+%                          sqrt(max(1, chi2red_i)) and the search rerun
+%                          until the scales settle (at most 4 rounds).
+%                          Scales are never taken BELOW one: a dataset
+%                          whose residuals are smaller than its sigmas has
+%                          correlated errors absorbed by the fit, not
+%                          better data (see R.s2). Recorded in
+%                          R.sigma_scale_shape and R.sigma_scale_strain;
+%                          the per-dataset chi-squareds stay against the
+%                          INPUT sigmas so the raw misfit is still
+%                          visible. A shape-only fit needs no rescaling -
+%                          one common factor moves nothing but the
+%                          interval, and the floor on R.s2 handles that.
 %
 %   RETURNS
 %     R.E, R.E_lo, R.E_hi   best-fit effective Young's modulus and its
@@ -161,7 +216,19 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                           (NaN when no sigma was supplied)
 %     R.s2                  data variance implied by the fit residuals, and
 %                           the unit the interval is measured in: the bounds
-%                           are where the profiled misfit rises by one of it
+%                           are where the profiled misfit rises by one of it.
+%                           With sigmas supplied it is FLOORED AT ONE: when
+%                           the residuals come out smaller than the sigmas
+%                           the usual reading is that the sigmas were
+%                           pessimistic, but here it is the signature of
+%                           errors shared by every block (a per-pass height
+%                           offset moves the whole profile and the amplitude
+%                           absorbs it), and shrinking the interval by the
+%                           residual variance made it two to three times
+%                           narrower than a jackknife over passes on the
+%                           real lines. Above one it inflates as usual.
+%     R.sigma_scale_shape, R.sigma_scale_strain   the factors applied to
+%                           the input sigmas by opts.rescale (1 without it)
 %     R.J, R.E_grid, R.x0_grid   the misfit surface, n_x0 by n_E, on the
 %                           search grid before any refinement
 %     R.J_profile           misfit profiled over x0, one value per E, with
@@ -189,9 +256,12 @@ function R = invertElasticModulus(x_obs, w_obs, opts)
 %                           against its own input sigmas - the joint fit
 %                           cannot be trusted unless both are order 1
 %     R.strain_x/_obs/_sigma/_model   the strain data and the fit at them
-%     R.strain_spec         the ref_depth and avg_width the strain rows
-%                           used - echoed, like R.h_spec, so a caller can
-%                           refit the same observable
+%     R.strain_spec         the ref_depth, top_depth, fit_offset and
+%                           avg_width the strain rows used - echoed, like
+%                           R.h_spec, so a caller can refit the same
+%                           observable
+%     R.strain_offset       the fitted strain constant (0 without
+%                           opts.strain.fit_offset)
 %     R.strain_grid         predicted strain admittance on R.x_grid's
 %                           beam section, for plotting
 %
@@ -201,6 +271,8 @@ if nargin < 3 || isempty(opts), opts = struct(); end
 
 x_obs = x_obs(:);
 w_obs = w_obs(:);
+% strain only: no deflection rows, the beam is fitted to opts.strain alone
+strain_only = isempty(x_obs) && isfield(opts,'strain') && ~isempty(opts.strain);
 assert(numel(x_obs) == numel(w_obs), ...
   'x_obs has %d points and w_obs %d', numel(x_obs), numel(w_obs));
 
@@ -217,23 +289,29 @@ end
 ok = isfinite(x_obs) & isfinite(w_obs) & isfinite(sigma) & sigma > 0;
 x_obs = x_obs(ok); w_obs = w_obs(ok); sigma = sigma(ok);
 M = numel(x_obs);
-assert(M >= 6, 'need at least 6 usable observations, have %d', M);
-assert(all(diff(x_obs) > 0), 'x_obs must be strictly increasing (seaward)');
+if ~strain_only
+  assert(M >= 6, 'need at least 6 usable observations, have %d', M);
+  assert(all(diff(x_obs) > 0), 'x_obs must be strictly increasing (seaward)');
 
-% Orientation. Getting this backwards is the easy mistake - the survey
-% coordinate often runs the other way - and it fails silently, returning
-% whatever modulus best fits a mirrored curve. Catch it here.
-sx = x_obs - mean(x_obs); sw = w_obs - mean(w_obs);
-trend = (sx.'*sw) / max(sqrt((sx.'*sx)*(sw.'*sw)), eps);
-assert(trend > 0, ['w_obs falls as x_obs increases, so x is running ' ...
-  'landward. x_obs must increase SEAWARD, away from the clamped end ' ...
-  '(corr = %.2f).'], trend);
+  % Orientation. Getting this backwards is the easy mistake - the survey
+  % coordinate often runs the other way - and it fails silently, returning
+  % whatever modulus best fits a mirrored curve. Catch it here. (Strain
+  % alone carries no such check: curvature changes sign along the beam.)
+  sx = x_obs - mean(x_obs); sw = w_obs - mean(w_obs);
+  trend = (sx.'*sw) / max(sqrt((sx.'*sx)*(sw.'*sw)), eps);
+  assert(trend > 0, ['w_obs falls as x_obs increases, so x is running ' ...
+    'landward. x_obs must increase SEAWARD, away from the clamped end ' ...
+    '(corr = %.2f).'], trend);
+end
 
 if ~isfield(opts,'h') || isempty(opts.h)
   error('vdef:invertElasticModulus:noThickness', ...
     'opts.h is required: flexure constrains E*h^3, so E* is meaningless without h.');
 end
-if ~isfield(opts,'x0_init')     || isempty(opts.x0_init),     opts.x0_init = x_obs(1); end
+if ~isfield(opts,'x0_init')     || isempty(opts.x0_init)
+  if strain_only, opts.x0_init = min(opts.strain.x); else, opts.x0_init = x_obs(1); end
+end
+if ~isfield(opts,'amplitude'), opts.amplitude = []; end
 if ~isfield(opts,'E_grid')      || isempty(opts.E_grid)
   opts.E_grid = logspace(log10(0.05e9), log10(30e9), 61);
 end
@@ -252,6 +330,7 @@ if ~isfield(opts,'dx_max')      || isempty(opts.dx_max),      opts.dx_max = 50; 
 if ~isfield(opts,'max_nodes')   || isempty(opts.max_nodes),   opts.max_nodes = 1500; end
 if ~isfield(opts,'fit_offset')  || isempty(opts.fit_offset),  opts.fit_offset = false; end
 if ~isfield(opts,'beam')        || isempty(opts.beam),        opts.beam = struct();  end
+if ~isfield(opts,'rescale')     || isempty(opts.rescale),     opts.rescale = false;  end
 
 % Optional second dataset: englacial strain admittance. Validated here and
 % then carried inside opts so the model evaluators see it everywhere.
@@ -266,7 +345,7 @@ if has_strain
   % let the strain set amp for itself, the amplitude information cancels
   % exactly, and the joint fit comes back WIDER than shape alone while
   % looking perfectly healthy. Found by unit test, kept as a guard.
-  assert(have_sigma, ['vdef.invertElasticModulus: a joint fit needs ' ...
+  assert(have_sigma || strain_only, ['vdef.invertElasticModulus: a joint fit needs ' ...
     'opts.sigma on the shape data, or the shared amplitude decouples ' ...
     'and the strain constraint silently cancels']);
   st = opts.strain;
@@ -280,6 +359,10 @@ if has_strain
   assert(numel(sx_) >= 3, ...
     'opts.strain has %d usable points; need at least 3', numel(sx_));
   if ~isfield(st,'ref_depth') || isempty(st.ref_depth), st.ref_depth = 100; end
+  if ~isfield(st,'top_depth') || isempty(st.top_depth), st.top_depth = 0; end
+  if ~isfield(st,'fit_offset') || isempty(st.fit_offset), st.fit_offset = false; end
+  assert(st.top_depth >= 0 && st.top_depth < st.ref_depth, ...
+    'strain top_depth %.0f m must lie between the surface and ref_depth %.0f m', st.top_depth, st.ref_depth);
   if ~isfield(st,'avg_width') || isempty(st.avg_width)
     st.avg_width = opts.avg_width;
     assert(isscalar(st.avg_width), ...
@@ -287,112 +370,69 @@ if has_strain
   end
   st.x = sx_;
   opts.strain = st;
+  if strain_only, have_sigma = true; end    % the strain sigmas are the weights
   hmin = min(thickness_on(opts.h, sx_));
   assert(st.ref_depth < hmin, ...
     'strain ref_depth %.0f m is below the thinnest ice (%.0f m)', st.ref_depth, hmin);
 end
 Ns = numel(sx_);
+% The positions that set the model domain and bound the clamp: the shape
+% observations, or the strain ones when they are all there is
+if strain_only, opts.x_dom = sort(sx_); else, opts.x_dom = x_obs; end
+amp_fixed = ~isempty(opts.amplitude);
 
 E_grid  = sort(opts.E_grid(:)).';
 x0_grid = sort(opts.x0_grid(:)).';
 nE  = numel(E_grid);
 nx0 = numel(x0_grid);
 assert(nE >= 3 && nx0 >= 1, 'need at least 3 trial moduli and 1 trial boundary');
-assert(all(x0_grid < x_obs(end)), ...
+assert(all(x0_grid < opts.x_dom(end)), ...
   'every trial landward boundary must sit landward of the last observation');
 
 % Both datasets stacked once; every misfit evaluation uses the stack. The
 % shape rows come first, and Na is what tells fit_linear which rows the
 % optional offset column applies to.
 u  = 1 ./ sigma.^2;
+us = 1 ./ ss_.^2;
 Na = M;
 yy = [w_obs; sy_];
-uu = [u; 1 ./ ss_.^2];
-
-%% Misfit surface
-J = inf(nx0, nE);
-for a = 1:nx0
-  for e = 1:nE
-    Wm = model_shape(x0_grid(a), E_grid(e), x_obs, opts);
-    if isempty(Wm), continue; end
-    J(a,e) = fit_linear(Wm, yy, uu, opts.fit_offset, Na);
-  end
-end
-assert(any(isfinite(J(:))), 'no trial model could be solved - check opts.h and the grids');
+soff_on = has_strain && opts.strain.fit_offset;
+npar = 2 + double(~amp_fixed) + double(opts.fit_offset) + double(soff_on);   % E*, x0, amplitude, offsets
 
 dlogE = mean(diff(log10(E_grid)));
 dx0   = 0; if nx0 > 1, dx0 = mean(diff(x0_grid)); end
 
-%% Profile over the clamp position at every modulus
-% Taking min(J) down the x0 grid is NOT a profile likelihood, because a
-% discrete x0 cannot follow E along the trade-off valley. The misfit away
-% from the optimum then comes out too high, the profile too steep, and the
-% interval read off its curvature several times too narrow. Refining x0
-% continuously at each E is what makes R.J_profile mean what it says.
-Jprof  = inf(1, nE);
-X0prof = nan(1, nE);
-for e = 1:nE
-  [j0, a0] = min(J(:,e));
-  if ~isfinite(j0), continue; end
-  [Jprof(e), X0prof(e)] = refine_x0(E_grid(e), x0_grid(a0), dx0, j0, ...
-                                    x_obs, yy, uu, Na, opts, ...
-                                    [x0_grid(1) x0_grid(end)]);
+%% Search, repeated under variance-component rescaling when asked
+% Each round is the full grid, profile and pattern search with the current
+% dataset weights; the raw reduced chi-squareds of its solution set the
+% next round's scales. Without opts.rescale (or without a second dataset)
+% there is exactly one round.
+scale_a = 1; scale_s = 1;
+MAX_ROUNDS = 4;
+for round = 1:MAX_ROUNDS
+  uu = [u / scale_a^2; us / scale_s^2];
+  Q  = search_misfit(x_obs, yy, uu, Na, opts, E_grid, x0_grid, dlogE, dx0);
+  [Wbest, info] = model_shape(Q.x0_best, Q.E_best, x_obs, opts);
+  [~, amp, off, soff] = fit_linear(Wbest, yy, uu, opts.fit_offset, Na);
+  resid   = w_obs - (amp*Wbest.W + off);
+  resid_s = sy_  - (amp*Wbest.S + soff);
+  x2a_raw = sum((resid ./ sigma).^2) / max(M - npar + double(soff_on), 1);
+  if strain_only, x2a_raw = NaN; end
+  x2s_raw = sum((resid_s ./ ss_).^2) / max(Ns - 1 - double(soff_on), 1);
+  if ~(opts.rescale && has_strain && ~strain_only), break; end
+  na = sqrt(max(1, x2a_raw));
+  ns = sqrt(max(1, x2s_raw));
+  if abs(na/scale_a - 1) < 0.02 && abs(ns/scale_s - 1) < 0.02, break; end
+  scale_a = na; scale_s = ns;
 end
-[Jgrid, ep] = min(Jprof);
+J = Q.J; Jprof = Q.Jprof; X0prof = Q.X0prof; ep = Q.ep;
+Jmin = Q.Jmin; E_best = Q.E_best; x0_best = Q.x0_best;
 
-%% Pattern search from the grid minimum
-% Elgart and others use MATLAB's patternsearch at this step. The same idea
-% is written out here so that it needs no toolbox and behaves identically in
-% Octave: poll the four axis neighbours at the current step, move to the
-% best improvement, halve the step when none of them improves.
-%
-% ONE ROUND OF LOCAL SAMPLING IS NOT ENOUGH, which is what this replaces.
-% E* and x0 trade off along a narrow diagonal valley, so quantising x0 to
-% the search grid pushes the coarse minimum's E* off by more than one E
-% step - and a refinement that only spans one step then converges to a
-% solution that fits ~20 times worse than the truth while looking perfectly
-% well behaved. Walking the valley is the whole job.
-Jmin   = Jgrid;
-E_best = E_grid(ep); x0_best = X0prof(ep);
-sE = dlogE; sx = dx0;
-for it = 1:400
-  poll = [log10(E_best)+sE, x0_best; log10(E_best)-sE, x0_best];
-  if sx > 0
-    poll = [poll; log10(E_best), x0_best+sx; log10(E_best), x0_best-sx]; %#ok<AGROW>
-  end
-  Jbest = Jmin; qbest = 0;
-  for q = 1:size(poll,1)
-    if poll(q,2) >= x_obs(end), continue; end
-    % The pattern search is CONFINED TO THE SEARCH GRID. Unbounded, it
-    % walks out of the grid entirely on a badly conditioned fit and
-    % returns a number with no support - 125 m patch blocks produced
-    % E* of 41 TPa this way, four orders of magnitude past the grid top,
-    % while R.interior (judged from the grid profile) still looked fine.
-    % Clamped, such a fit sits at the grid edge and R.interior reports it,
-    % which is the honest failure.
-    if 10^poll(q,1) < E_grid(1) || 10^poll(q,1) > E_grid(end), continue; end
-    if poll(q,2) < x0_grid(1) || poll(q,2) > x0_grid(end), continue; end
-    Wm = model_shape(poll(q,2), 10^poll(q,1), x_obs, opts);
-    if isempty(Wm), continue; end
-    Jv = fit_linear(Wm, yy, uu, opts.fit_offset, Na);
-    if Jv < Jbest, Jbest = Jv; qbest = q; end
-  end
-  if qbest > 0
-    Jmin = Jbest; E_best = 10^poll(qbest,1); x0_best = poll(qbest,2);
-  else
-    sE = sE/2; sx = sx/2;
-    if sE < dlogE/512, break; end
-  end
-end
-
-[Wbest, info] = model_shape(x0_best, E_best, x_obs, opts);
-[~, amp, off] = fit_linear(Wbest, yy, uu, opts.fit_offset, Na);
-resid   = w_obs - (amp*Wbest.W + off);
-resid_s = sy_  - amp*Wbest.S;
-
-npar = 2 + 1 + double(opts.fit_offset);          % E*, x0, amplitude, offset
 dof  = max(M + Ns - npar, 1);
 s2   = Jmin / dof;                               % variance implied by the fit
+% Floored at one when sigmas were supplied - see R.s2 in the header. This is
+% in the units of the sigmas actually used, i.e. after any rescaling.
+if have_sigma, s2 = max(s2, 1); end
 
 %% Interval from the profiled misfit
 % The misfit is quadratic in log10 E near its minimum, and the interval is
@@ -455,12 +495,12 @@ for e = 2:nE-1
 end
 
 %% Full solution on its own grid, for plotting
-[xg, hg, ~, E_solve] = model_grid(x0_best, E_best, x_obs, opts);
+[xg, hg, ~, E_solve] = model_grid(x0_best, E_best, opts.x_dom, opts);
 bopts = opts.beam; bopts.A0 = 1;
 Fb = vdef.beamFlexure(xg, hg, E_solve, bopts);
 % Grounded ice landward of the clamp: flat, at the fitted offset.
-if x_obs(1) < x0_best
-  x_pre = linspace(x_obs(1), x0_best, 20).'; x_pre(end) = [];
+if opts.x_dom(1) < x0_best
+  x_pre = linspace(opts.x_dom(1), x0_best, 20).'; x_pre(end) = [];
 else
   x_pre = zeros(0,1);
 end
@@ -483,7 +523,9 @@ R.w_grid        = [repmat(off, numel(x_pre), 1); amp*Fb.w + off];
 R.rms           = sqrt(mean(resid.^2));
 R.s2            = s2;
 R.chi2red       = NaN;
-if have_sigma, R.chi2red = Jmin / dof; end
+if have_sigma, R.chi2red = Jmin / dof; end       % against the sigmas USED (rescaled)
+R.sigma_scale_shape  = scale_a;
+R.sigma_scale_strain = scale_s;
 
 % The strain dataset, echoed with its model and its own goodness of fit.
 % chi2_strain uses the INPUT sigmas, not s2, so a strain misfit cannot
@@ -499,16 +541,19 @@ if has_strain
   R.strain_obs    = sy_;
   R.strain_sigma  = ss_;
   R.strain_spec   = struct('ref_depth', opts.strain.ref_depth, ...
+                           'top_depth', opts.strain.top_depth, ...
+                           'fit_offset', opts.strain.fit_offset, ...
                            'avg_width', opts.strain.avg_width);
-  R.strain_model  = amp*Wbest.S;
-  R.chi2_strain   = sum((resid_s ./ ss_).^2) / max(Ns - 1, 1);
+  R.strain_offset = soff;
+  R.strain_model  = amp*Wbest.S + soff;
+  R.chi2_strain   = x2s_raw;
   if have_sigma
-    R.chi2_shape  = sum((resid ./ sigma).^2) / max(M - npar, 1);
+    R.chi2_shape  = x2a_raw;
   end
   % The strain admittance on the plotting grid, for drawing the predicted
   % profile rather than only its block averages.
   K2g = strain_lever(opts, Fb.x);
-  R.strain_grid = amp * K2g .* Fb.d2wdx2;
+  R.strain_grid = amp * K2g .* Fb.d2wdx2 + soff;
 end
 R.J             = J;
 R.J_profile     = Jprof;
@@ -541,6 +586,88 @@ R.n_obs         = M;
 R.dof           = dof;
 R.resid         = resid;
 
+end
+
+%% ========================================================================
+function Q = search_misfit(x_obs, yy, uu, Na, opts, E_grid, x0_grid, dlogE, dx0)
+%SEARCH_MISFIT Grid, profile over the clamp, and pattern search - one round.
+nE = numel(E_grid); nx0 = numel(x0_grid);
+
+%% Misfit surface
+J = inf(nx0, nE);
+for a = 1:nx0
+  for e = 1:nE
+    Wm = model_shape(x0_grid(a), E_grid(e), x_obs, opts);
+    if isempty(Wm), continue; end
+    J(a,e) = fit_linear(Wm, yy, uu, opts.fit_offset, Na);
+  end
+end
+assert(any(isfinite(J(:))), 'no trial model could be solved - check opts.h and the grids');
+
+%% Profile over the clamp position at every modulus
+% Taking min(J) down the x0 grid is NOT a profile likelihood, because a
+% discrete x0 cannot follow E along the trade-off valley. The misfit away
+% from the optimum then comes out too high, the profile too steep, and the
+% interval read off its curvature several times too narrow. Refining x0
+% continuously at each E is what makes R.J_profile mean what it says.
+Jprof  = inf(1, nE);
+X0prof = nan(1, nE);
+for e = 1:nE
+  [j0, a0] = min(J(:,e));
+  if ~isfinite(j0), continue; end
+  [Jprof(e), X0prof(e)] = refine_x0(E_grid(e), x0_grid(a0), dx0, j0, ...
+                                    x_obs, yy, uu, Na, opts, ...
+                                    [x0_grid(1) x0_grid(end)]);
+end
+[Jgrid, ep] = min(Jprof);
+
+%% Pattern search from the grid minimum
+% Elgart and others use MATLAB's patternsearch at this step. The same idea
+% is written out here so that it needs no toolbox and behaves identically in
+% Octave: poll the four axis neighbours at the current step, move to the
+% best improvement, halve the step when none of them improves.
+%
+% ONE ROUND OF LOCAL SAMPLING IS NOT ENOUGH, which is what this replaces.
+% E* and x0 trade off along a narrow diagonal valley, so quantising x0 to
+% the search grid pushes the coarse minimum's E* off by more than one E
+% step - and a refinement that only spans one step then converges to a
+% solution that fits ~20 times worse than the truth while looking perfectly
+% well behaved. Walking the valley is the whole job.
+Jmin   = Jgrid;
+E_best = E_grid(ep); x0_best = X0prof(ep);
+sE = dlogE; sx = dx0;
+for it = 1:400
+  poll = [log10(E_best)+sE, x0_best; log10(E_best)-sE, x0_best];
+  if sx > 0
+    poll = [poll; log10(E_best), x0_best+sx; log10(E_best), x0_best-sx]; %#ok<AGROW>
+  end
+  Jbest = Jmin; qbest = 0;
+  for q = 1:size(poll,1)
+    if poll(q,2) >= opts.x_dom(end), continue; end
+    % The pattern search is CONFINED TO THE SEARCH GRID. Unbounded, it
+    % walks out of the grid entirely on a badly conditioned fit and
+    % returns a number with no support - 125 m patch blocks produced
+    % E* of 41 TPa this way, four orders of magnitude past the grid top,
+    % while R.interior (judged from the grid profile) still looked fine.
+    % Clamped, such a fit sits at the grid edge and R.interior reports it,
+    % which is the honest failure.
+    if 10^poll(q,1) < E_grid(1) || 10^poll(q,1) > E_grid(end), continue; end
+    if poll(q,2) < x0_grid(1) || poll(q,2) > x0_grid(end), continue; end
+    Wm = model_shape(poll(q,2), 10^poll(q,1), x_obs, opts);
+    if isempty(Wm), continue; end
+    Jv = fit_linear(Wm, yy, uu, opts.fit_offset, Na);
+    if Jv < Jbest, Jbest = Jv; qbest = q; end
+  end
+  if qbest > 0
+    Jmin = Jbest; E_best = 10^poll(qbest,1); x0_best = poll(qbest,2);
+  else
+    sE = sE/2; sx = sx/2;
+    if sE < dlogE/512, break; end
+  end
+end
+
+Q = struct('J', J, 'Jprof', Jprof, 'X0prof', X0prof, 'ep', ep, ...
+           'Jmin', Jmin, 'E_best', E_best, 'x0_best', x0_best);
 end
 
 %% ========================================================================
@@ -617,7 +744,7 @@ function [Mdl, info] = model_shape(x0, E, x_obs, opts)
 %   problem, and letting it compete in the misfit would let a stiff
 %   solution win by being clipped rather than by fitting.
 Mdl = []; info = struct('n_lambda', NaN, 'lambda', NaN);
-[xg, hg, lambda, E_solve] = model_grid(x0, E, x_obs, opts);
+[xg, hg, lambda, E_solve] = model_grid(x0, E, opts.x_dom, opts);
 if (xg(end) - xg(1)) < 2*lambda || numel(xg) < 7
   return;
 end
@@ -630,9 +757,12 @@ if isfield(opts,'strain') && ~isempty(opts.strain)
   st  = opts.strain;
   K2  = strain_lever(opts, st.x);
   Mdl.S = K2 .* sample_field(F.x, F.d2wdx2, st.x, x0, st.avg_width);
+  Mdl.soff = st.fit_offset;
 else
   Mdl.S = zeros(0,1);
+  Mdl.soff = false;
 end
+Mdl.amp = opts.amplitude;      % [] = fitted
 info.n_lambda = F.n_lambda;
 info.lambda   = lambda;
 end
@@ -640,16 +770,21 @@ end
 %% ========================================================================
 function K2 = strain_lever(opts, xq)
 %STRAIN_LEVER The depth-integrated bending lever arm at each position.
-%   Integral of nu/(1-nu)*(z_n - z) from the surface to the reference
-%   depth, with the neutral plane z_n = h(x)/2 following the LOCAL
-%   thickness. Positive while zr < z_n everywhere, so on a rising tide the
+%   Integral of nu/(1-nu)*(z_n - z) from top_depth (the phase reference,
+%   the surface by default) to the reference depth zr, with the neutral
+%   plane z_n = h(x)/2 following the LOCAL thickness. Near the neutral
+%   plane the two halves of the column strain in opposite senses, so a
+%   reference far below the surface leaves a much smaller lever: from 60 m
+%   to z_n it is (z_n - 60)^2/2, a third of the surface-referenced value at
+%   100 m in 280 m of ice. Positive while zr < z_n everywhere, so on a rising tide the
 %   column thickens where the beam is concave-up (at the clamp) and thins
 %   where it is concave-down (mid-line) - the sign pattern the radar
 %   admittance map shows.
 nu = beam_nu(opts);
-zr = opts.strain.ref_depth;
+zr = opts.strain.ref_depth; zt = 0;
+if isfield(opts.strain, 'top_depth') && ~isempty(opts.strain.top_depth), zt = opts.strain.top_depth; end
 zn = thickness_on(opts.h, xq) / 2;
-K2 = (nu/(1-nu)) * (zn*zr - zr^2/2);
+K2 = (nu/(1-nu)) * (zn*(zr - zt) - (zr^2 - zt^2)/2);
 end
 
 %% ========================================================================
@@ -703,7 +838,7 @@ for it = 1:40
   moved = false;
   for d = [-1 1]
     xc = xb + d*s;
-    if xc >= x_obs(end), continue; end
+    if xc >= opts.x_dom(end), continue; end
     if xc < x0lim(1) || xc > x0lim(2), continue; end
     Wm = model_shape(xc, E, x_obs, opts);
     if isempty(Wm), continue; end
@@ -718,7 +853,7 @@ end
 end
 
 %% ========================================================================
-function [J, amp, off] = fit_linear(Mdl, yy, uu, fit_offset, Na)
+function [J, amp, off, soff] = fit_linear(Mdl, yy, uu, fit_offset, Na)
 %FIT_LINEAR Weighted least squares for the parameters the model is linear in.
 %   ONE amplitude is shared by both observables: the deflection and the
 %   bending strain of the same beam scale together with the far-field
@@ -727,22 +862,29 @@ function [J, amp, off] = fit_linear(Mdl, yy, uu, fit_offset, Na)
 %   the amplitude (it is normalised away), while the strain data are
 %   absolute, so they contribute the D^(-1/2) curvature-amplitude
 %   constraint that shape alone lacks. The optional offset is a shape-only
-%   nuisance column: the strain admittance is reference-invariant by
-%   construction and gets no such freedom.
-amp = NaN; off = 0; J = inf;
+%   nuisance column. The strain gets its own constant only when asked
+%   (opts.strain.fit_offset, Mdl.soff): a surface-referenced admittance is
+%   reference-invariant and needs none, but a phase reference in the
+%   shallow firn carries a line-uniform response that is not bending.
+amp = NaN; off = 0; soff = 0; J = inf;
+Ns = numel(Mdl.S);
 rows = [Mdl.W; Mdl.S];
-if fit_offset
-  X = [rows, [ones(Na,1); zeros(numel(Mdl.S),1)]];
-else
-  X = rows;
+fixed = isfield(Mdl, 'amp') && ~isempty(Mdl.amp);
+if fixed, X = zeros(Na + Ns, 0); y = yy - Mdl.amp*rows; else, X = rows; y = yy; end
+if fit_offset, X = [X, [ones(Na,1); zeros(Ns,1)]]; end
+if isfield(Mdl, 'soff') && Mdl.soff, X = [X, [zeros(Na,1); ones(Ns,1)]]; end
+p = zeros(0, 1);
+if ~isempty(X)
+  Xw = X .* repmat(uu, 1, size(X,2));
+  A  = X.' * Xw;
+  if rcond(A) < 1e-12, return; end
+  p  = A \ (Xw.' * y);
 end
-Xw = X .* repmat(uu, 1, size(X,2));
-A  = X.' * Xw;
-if rcond(A) < 1e-12, return; end
-p   = A \ (Xw.' * yy);
-amp = p(1);
-if fit_offset, off = p(2); end
-r = yy - X*p;
+k = 0;
+if fixed, amp = Mdl.amp; else, k = 1; amp = p(1); end
+if fit_offset, k = k + 1; off = p(k); end
+if isfield(Mdl, 'soff') && Mdl.soff, soff = p(end); end
+r = y - X*p;
 J = sum(uu .* r.^2);
 end
 

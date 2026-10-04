@@ -49,6 +49,20 @@
 %        optimum and not from the grid profile alone. A fit pinned to a
 %        boundary is not a measurement, and elasticity_map reads
 %        R.interior to decide whether to draw one
+%    14. variance-component rescaling of the joint fit
+%    15. the interval never shrinks below what the sigmas imply
+%    16. a strain observable referenced BELOW the surface (the coherent
+%        stack's phase reference) is modelled over its own interval, and a
+%        line-uniform response on top of the bending (the shallow-firn
+%        term of a 5 m reference) is absorbed by the strain offset: E*
+%        and the constant are recovered, and ignoring the constant biases
+%        the fit
+%    17. STRAIN ONLY (x_obs and w_obs empty): the beam fitted to the
+%        englacial strain alone recovers E*, with the amplitude fitted or
+%        fixed at the floating far field; and on the survey's own window
+%        and noise (ten 500 m blocks from the clamp, 2 mm/m sigmas, a 5 m
+%        reference with its line-uniform term) the interval still covers
+%        the truth - the precision the real lines can be expected to reach
 %
 %   Runs in MATLAB or Octave:
 %     docker run --rm --platform linux/amd64 -v "$PWD":/work -w /work/scripts \
@@ -146,15 +160,27 @@ fprintf('   rms %.4f, chi2red %.2f, %.1f flexural lengths of pad, %d local minim
 assert(R.interior, 'the minimum ran to a grid edge');
 assert(abs(log(R.E/E_true)) < log(1.15), ...
   'E* off by %.0f%%', 100*(R.E/E_true - 1));
-% Two formal sigmas, not one. The reported interval IS one sigma, so a
-% one-sigma coverage check on a single fixed noise realisation is a coin
-% flip dressed up as an assertion - it would fail about a third of the time
-% for a perfectly correct inversion.
-nsig = abs(log(R.E/E_true)) / log(R.E_hi/R.E);
-fprintf('   truth is %.1f formal sigma from the fit\n', nsig);
-assert(nsig < 2, ...
-  'the truth %.2f GPa is %.1f formal sigma from the fitted %.2f GPa', ...
-  E_true/1e9, nsig, R.E/1e9);
+% Coverage over several noise draws, not a sigma count on one. For an
+% honest interval the profiled misfit at the truth, above the refined
+% minimum and in units of s2, is chi-squared with one degree of freedom, so
+% any single draw lands beyond two sigma one time in twenty-two. The MEAN
+% over NDRAW draws (the first is wo) is 1 with sd sqrt(2/NDRAW); 2.5 is
+% three of those above it, and an interval sqrt(2.5) too narrow, or a bias
+% of a formal sigma, fails. The truth sits on a node of this grid so its
+% profiled misfit is read exactly rather than interpolated.
+NDRAW = 8;
+co = iopts; co.E_grid = E_true * 10.^((-20:20)*0.05);
+dJ4 = zeros(1, NDRAW);
+for q = 1:NDRAW
+  if q == 1, wq = wo; else, wq = W + sig*randn(size(W)); end
+  Rq = vdef.invertElasticModulus(xo, wq, co);
+  dJ4(q) = (Rq.J_profile(21) - Rq.chi2red*Rq.dof) / Rq.s2;
+end
+fprintf('   truth at delta-chi2 %s over %d draws (mean %.2f, expect 1)\n', ...
+  sprintf('%.2f ', dJ4), NDRAW, mean(dJ4));
+assert(mean(dJ4) < 2.5, ...
+  'the truth sits at a mean delta-chi2 of %.2f over %d draws - the interval is too narrow or the fit biased', ...
+  mean(dJ4), NDRAW);
 assert(abs(R.x0 - x0_true) < 500, 'x0 off by %.0f m', R.x0 - x0_true);
 assert(R.chi2red < 2.5, 'reduced chi-squared %.2f - the model does not fit', R.chi2red);
 assert(R.n_local_min == 1, ...
@@ -280,7 +306,8 @@ try
   vdef.invertElasticModulus(xo, flipud(wo), struct('h', h_true));
 catch ME
   threw = true;
-  assert(~isempty(strfind(upper(ME.message), 'SEAWARD')), ...
+  says_seaward = ~isempty(strfind(upper(ME.message), 'SEAWARD'));   %#ok<STREMP> contains() is not in Octave 8
+  assert(says_seaward, ...
     'wrong error for a flipped profile: %s', ME.message);
 end
 assert(threw, 'a landward-running x was accepted instead of refused');
@@ -345,10 +372,24 @@ fprintf(['11. partial window joint: E* = %.2f GPa [%.2f, %.2f], x0 = %.0f m; ' .
   Rpj.E/1e9, Rpj.E_lo/1e9, Rpj.E_hi/1e9, Rpj.x0, span_joint, span_part);
 nsig_pj = abs(log(Rpj.E/E_true)) / log(Rpj.E_hi/Rpj.E);
 assert(nsig_pj < 2, 'joint partial-window truth at %.1f sigma', nsig_pj);
-assert(span_joint < 0.6*span_part, ...
-  ['the strain data did not tighten the partial window (%.2f vs %.2f ' ...
-   'decades) - the amplitude constraint is not reaching the fit'], ...
-  span_joint, span_part);
+% The tightening is compared on NOISE-FREE data with the same sigmas. The
+% misfit is then zero at the truth, s2 floors at one, and each interval is
+% the delta-chi2 = 1 width the sigmas imply - the information each dataset
+% carries, with nothing left to the draw. The noisy spans above scatter by
+% a third either way about that and are printed, not asserted.
+pj0 = struct('h', h_true, 'sigma', sig_p*ones(size(wp)), ...
+             'E_grid', logspace(log10(0.2e9), log10(20e9), 41), 'x0_grid', -6000:250:0);
+Rp0 = vdef.invertElasticModulus(xp, Wp, pj0);
+pj0.strain = struct('x', xp, 'y', amp_p*K2*wpp_p, ...
+                    'sigma', sig_s*ones(size(dstr_p)), 'ref_depth', ZR);
+Rpj0 = vdef.invertElasticModulus(xp, Wp, pj0);
+span_p0 = log10(Rp0.E_hi/Rp0.E_lo); span_j0 = log10(Rpj0.E_hi/Rpj0.E_lo);
+fprintf('    noise-free: interval %.3f decades joint vs %.3f shape-only (ratio %.2f)\n', ...
+  span_j0, span_p0, span_j0/span_p0);
+assert(span_j0 < 0.7*span_p0, ...
+  ['the strain data did not tighten the partial window (%.3f vs %.3f ' ...
+   'decades, noise-free) - the amplitude constraint is not reaching the fit'], ...
+  span_j0, span_p0);
 
 %% 12. Local E* is honest about where it is resolved
 % The E_patch mode, on the full-window joint data of check 10. The clamp
@@ -466,11 +507,141 @@ assert(Ec.interior, ...
 assert(isfinite(Ec.E_lo) && isfinite(Ec.E_hi), ...
   'the well-posed fit lost its interval');
 
+%% 14. Variance-component rescaling of the joint fit
+% Check 10's strain data, handed over with sigmas HALF their true scatter.
+% At face value the strain rows then carry four times the weight their
+% noise supports - the situation on the real lines, where the strain
+% misfits at reduced chi-squared 2-4 against 0.1-1 for the shape.
+% opts.rescale estimates each dataset's variance from its own residuals,
+% so the fit should report a strain scale near 2, a raw strain
+% chi-squared near 4, and land where the correctly weighted fit did.
+Rr = vdef.invertElasticModulus(xo, wo, ...
+  struct('h', h_true, 'sigma', sig*ones(size(wo)), ...
+         'E_grid', iopts.E_grid, 'x0_grid', iopts.x0_grid, 'rescale', true, ...
+         'strain', struct('x', xstr, 'y', dstr, ...
+                          'sigma', 0.5*sig_s*ones(size(dstr)), ...
+                          'ref_depth', ZR, 'avg_width', BW)));
+fprintf(['14. strain sigmas at half their scatter: scales shape %.2f, strain %.2f; ' ...
+         'raw chi2 strain %.2f; E* = %.2f [%.2f, %.2f] vs %.2f [%.2f, %.2f] correctly weighted\n'], ...
+  Rr.sigma_scale_shape, Rr.sigma_scale_strain, Rr.chi2_strain, ...
+  Rr.E/1e9, Rr.E_lo/1e9, Rr.E_hi/1e9, Rj.E/1e9, Rj.E_lo/1e9, Rj.E_hi/1e9);
+% The target is the scatter the estimator can actually see. Check 10's
+% strain noise is one fixed draw of 22 values, and for this seed its RMS
+% is 0.73 sig_s, not 1; with sigmas quoted at half, the scale the data
+% support is 2 x 0.73 = 1.47, and a fixed bound around a nominal 2 fails an
+% honest estimator on that draw (it returned 1.50, raw chi2 2.24 against
+% 2.26 expected). So compare against the realised noise.
+s_real = 2*sqrt(mean((dstr - K2*Wpp).^2))/sig_s;
+assert(s_real > 1.2, 'the test needs the quoted strain sigmas to be clearly too small (realised scale %.2f)', s_real);
+assert(abs(Rr.sigma_scale_strain/s_real - 1) < 0.15, ...
+  'strain sigma scale %.2f against %.2f implied by the realised noise', Rr.sigma_scale_strain, s_real);
+assert(Rr.chi2_strain > 0.7*s_real^2, ...
+  'the raw strain chi-squared (%.2f) should still show the misfit (~%.2f from the realised noise)', ...
+  Rr.chi2_strain, s_real^2);
+assert(abs(log(Rr.E/Rj.E)) < log(1.05), ...
+  'rescaled E* differs from the correctly weighted fit by %.0f%%', 100*(Rr.E/Rj.E - 1));
+wr = log10(Rr.E_hi/Rr.E_lo); wj = log10(Rj.E_hi/Rj.E_lo);
+assert(abs(wr - wj) < 0.5*wj, ...
+  'rescaled interval %.3f dec against %.3f correctly weighted', wr, wj);
+assert(Rj.sigma_scale_shape == 1 && Rj.sigma_scale_strain == 1, ...
+  'a fit without opts.rescale must report unit scales');
+
+%% 15. The interval never shrinks below what the sigmas imply
+% Check 4's data with sigmas quoted three times too large. The residuals
+% then sit at chi2red ~0.11, and scaling the interval by that variance
+% would make it three times narrower than the sigmas support. On the real
+% lines that is exactly the signature of errors shared by every block
+% (a per-pass height offset moves the whole profile and the amplitude
+% absorbs it), so the floor is the honest reading: three times the
+% sigma, three times the interval. E* itself cannot move under a uniform
+% sigma - the misfit surface is only rescaled.
+R3 = vdef.invertElasticModulus(xo, wo, setfield(iopts, 'sigma', 3*sig*ones(size(wo)))); %#ok<SFLD>
+w3 = log10(R3.E_hi/R3.E_lo); w1 = log10(R.E_hi/R.E_lo);
+fprintf('15. sigma x3: chi2red %.2f, s2 used %.2f; interval %.3f dec vs %.3f at the true sigma (ratio %.2f)\n', ...
+  R3.chi2red, R3.s2, w3, w1, w3/w1);
+assert(abs(log(R3.E/R.E)) < 1e-9, 'a uniform sigma moved E*');
+assert(R3.s2 >= 1, 'the interval variance was not floored at the sigmas (s2 %.2f)', R3.s2);
+assert(w3/w1 > 2.2 && w3/w1 < 4.0, ...
+  'interval ratio %.2f under a 3x sigma - expected ~3', w3/w1);
+
+%% 16. A sub-surface reference and a line-uniform strain term
+% Check 10's beam, observed between 60 and 140 m (top_depth / ref_depth),
+% plus a constant -2 mm/m in every strain row - the size of the 5 m
+% reference's shallow-firn term. Lever over that interval:
+% nu/(1-nu)*(z_n*(zr - zt) - (zr^2 - zt^2)/2).
+ZT = 60; ZR2 = 140; C16 = -2e-3;
+K2b = (0.3/0.7) * (ZN*(ZR2 - ZT) - (ZR2^2 - ZT^2)/2);
+d16 = K2b*Wpp + C16 + sig_s*randn(size(Wpp));
+s16 = struct('x', xstr, 'y', d16, 'sigma', sig_s*ones(size(d16)), 'ref_depth', ZR2, ...
+             'top_depth', ZT, 'avg_width', BW, 'fit_offset', true);
+o16 = struct('h', h_true, 'sigma', sig*ones(size(wo)), 'E_grid', iopts.E_grid, ...
+             'x0_grid', iopts.x0_grid, 'strain', s16);
+R16 = vdef.invertElasticModulus(xo, wo, o16);
+R16n = vdef.invertElasticModulus(xo, wo, setfield(o16, 'strain', setfield(s16, 'fit_offset', false))); %#ok<SFLD>
+fprintf(['16. reference at %d m, read at %d m, %+.1f mm/m constant: E* = %.2f GPa [%.2f, %.2f] (truth %.2f), ' ...
+         'offset %+.2f mm/m, chi2 strain %.2f; without the offset chi2 strain %.1f\n'], ZT, ZR2, 1e3*C16, ...
+  R16.E/1e9, R16.E_lo/1e9, R16.E_hi/1e9, E_true/1e9, 1e3*R16.strain_offset, R16.chi2_strain, R16n.chi2_strain);
+assert(abs(log(R16.E/E_true)) < log(1.12), 'sub-surface reference: E* off by %.0f%%', 100*(R16.E/E_true - 1));
+assert(abs(R16.strain_offset - C16) < 3*sig_s, 'strain offset not recovered (%.2f mm/m)', 1e3*R16.strain_offset);
+assert(R16.chi2_strain < 2.5, 'strain misfits with the offset fitted (%.2f)', R16.chi2_strain);
+assert(R16n.chi2_strain > 10*R16.chi2_strain, 'a line-uniform term left unmodelled should misfit');
+assert(R16.strain_spec.top_depth == ZT && R16.strain_spec.fit_offset, 'strain spec not echoed');
+
+%% 17. Strain only
+% Check 10's strain data with no deflection rows. Fitted amplitude: only
+% the shape of the curvature profile constrains E*. Fixed amplitude (1,
+% the shape data's far field): its size constrains it too.
+o17 = struct('h', h_true, 'E_grid', iopts.E_grid, 'x0_grid', iopts.x0_grid, ...
+  'strain', struct('x', xstr, 'y', dstr, 'sigma', sig_s*ones(size(dstr)), 'ref_depth', ZR, 'avg_width', BW));
+R17f = vdef.invertElasticModulus([], [], o17);
+R17a = vdef.invertElasticModulus([], [], setfield(o17, 'amplitude', 1)); %#ok<SFLD>
+fprintf(['17. strain only: amp fitted E* = %.2f GPa [%.2f, %.2f] (amp %.2f), amp fixed E* = %.2f [%.2f, %.2f] ' ...
+         '(truth %.2f), chi2 strain %.2f / %.2f\n'], R17f.E/1e9, R17f.E_lo/1e9, R17f.E_hi/1e9, R17f.amplitude, ...
+  R17a.E/1e9, R17a.E_lo/1e9, R17a.E_hi/1e9, E_true/1e9, R17f.chi2_strain, R17a.chi2_strain);
+assert(isnan(R17f.chi2_shape) && R17f.n_obs == 0 && R17f.n_strain == numel(xstr), 'strain-only bookkeeping');
+% Coverage, not a fixed tolerance: a free amplitude leaves only the shape
+% of the curvature profile, and its interval (~+/-25% here) is wider than
+% any fixed bound that MATLAB's and Octave's different noise draws share
+dJf = interp1(log10(R17f.E_grid), R17f.J_profile, log10(E_true)) - min(R17f.J_profile);
+dJa = interp1(log10(R17a.E_grid), R17a.J_profile, log10(E_true)) - min(R17a.J_profile);
+assert(dJf < 4*R17f.s2 && dJa < 4*R17a.s2, ...
+  'strain-only fit excludes the truth at 2 sigma (dchi2 %.1f fitted amp, %.1f fixed)', dJf/R17f.s2, dJa/R17a.s2);
+assert(log10(R17a.E_hi/R17a.E_lo) < log10(R17f.E_hi/R17f.E_lo), ...
+  'fixing the amplitude should tighten a strain-only fit');
+assert(R17a.amplitude == 1, 'a fixed amplitude must be reported as given');
+assert(R17f.chi2_strain < 2.5 && R17a.chi2_strain < 2.5, 'strain-only misfit');
+% The survey: ten 500 m blocks from 500 m landward of the clamp, the 5 m
+% reference with a -2 mm/m line-uniform term, 2 mm/m per block, amplitude
+% fixed at the floating far field. The bending signal peaks near 3 mm/m, so
+% one line is barely above its noise: over 30 draws the median E* came out
+% at 0.99 GPa for a 2.40 truth (noise reads as curvature, i.e. a softer
+% beam) while the 2-sigma interval covered the truth 28 times. One draw
+% here, so the assertion is that coverage: the truth within
+% delta-chi-squared 4 of the minimum on the profiled misfit.
+xs17 = x0_true - 250 + (0:500:4500).';
+Wp17 = zeros(size(xs17));
+for q = 1:numel(xs17)
+  xsmp = xs17(q) + BW*uu; ws = zeros(size(xsmp)); inb = xsmp >= x0_true;
+  ws(inb) = interp1(Ft.x, Ft.d2wdx2, xsmp(inb), 'linear'); Wp17(q) = mean(ws);
+end
+K2c = (0.3/0.7) * (ZN*(ZR - 5) - (ZR^2 - 25)/2);
+y17 = K2c*Wp17 - 2e-3 + 2e-3*randn(size(Wp17));
+R17s = vdef.invertElasticModulus([], [], struct('h', h_true, 'amplitude', 1, ...
+  'E_grid', logspace(log10(0.2e9), log10(20e9), 41), 'x0_grid', x0_true + (-2000:250:1000), ...
+  'strain', struct('x', xs17, 'y', y17, 'sigma', 2e-3*ones(size(y17)), 'ref_depth', ZR, ...
+                   'top_depth', 5, 'fit_offset', true, 'avg_width', BW)));
+fprintf('    survey window, 2 mm/m: E* = %.2f GPa [%.2f, %.2f], %.2f decades, offset %+.1f mm/m, interior %d\n', ...
+  R17s.E/1e9, R17s.E_lo/1e9, R17s.E_hi/1e9, log10(R17s.E_hi/R17s.E_lo), 1e3*R17s.strain_offset, R17s.interior);
+dJ17 = interp1(log10(R17s.E_grid), R17s.J_profile, log10(E_true)) - min(R17s.J_profile);
+fprintf('    truth at delta-chi2 %.2f (in units of s2 %.2f)\n', dJ17/R17s.s2, R17s.s2);
+assert(dJ17 < 4*R17s.s2, 'survey-window strain-only fit excludes the truth at 2 sigma (dchi2 %.1f)', dJ17/R17s.s2);
+
 %% Figure
 fig_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'figs');
 if ~exist(fig_dir,'dir'), mkdir(fig_dir); end
 
 hf = figure('Visible','off','Position',[100 100 1000 380]);
+if exist('theme', 'file'), theme(hf, 'light'); end   % not the OS dark mode (see grl_figure)
 
 subplot(1,3,1);
 % The analytic curve goes down FIRST and thick, so the thin numeric one
@@ -497,7 +668,7 @@ Jrel = log10(R.J / min(R.J(:)));
 imagesc(log10(R.E_grid/1e9), R.x0_grid/1e3, Jrel);
 set(gca,'YDir','normal'); hold on;
 plot(log10(R.E/1e9), R.x0/1e3, 'w+', 'MarkerSize', 10, 'LineWidth', 2);
-caxis([0 1]); colorbar;
+caxis([0 1]); colorbar;   %#ok<CAXIS> clim() is not in Octave 8
 xlabel('log_{10} E* (GPa)'); ylabel('Clamp position (km)');
 title('Misfit surface');
 

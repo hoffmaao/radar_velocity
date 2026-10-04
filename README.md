@@ -89,6 +89,18 @@ coalignment went per-column - the applied profile and per-window
 diagnostics (`dtau_bulk_profile`, `dtau_bulk_win`, `coalign_x_win`,
 `coalign_quality_win`, `coalign_n_win`, `coalign_n_win_ok`).
 
+**Removed at the source: the surface-coupled build.** The radar rides on
+the ice, so `ref_z` is the tide and the compensation itself is the error.
+The four GL products are now rebuilt with
+`param.multipass.zmotion_comp_en = false` into `CSARP_multipass_nozc`
+(`opr_vvel/server/run_multipass_nozc.sh`, then `run_vvel_nozc.sh`; the
+toolbox commit with that switch is pinned in
+`opr_vvel/server/environment.pin`). Those products are aligned at the
+product level, so `coalign_en` now defaults to `'auto'` and coalignment
+runs only on compensated builds (`vdef.zmotionApplied`); every output
+carries `aligned`, and loaders gate on `vdef.pairAligned`.
+`EAGER_2022` cannot be rebuilt and duplicates GL1 (`vdef.surveyLines`).
+
 **The estimator, replaced 2026-08-05.** It is now the normalised
 cross-correlation of the two slices' trace-averaged POWER profiles in a
 surface window, FFT-upsampled 32x. The previous cross-spectrum group
@@ -97,7 +109,7 @@ at all - depth-decaying white noise, whose trace-averaged profile has no
 bin-scale structure - and on the real products it ran 1.2-1.3x the true
 residual on the uncoregistered products and returned up to 8.5 ns of pure
 noise on the coregistered ones, where the truth is ~0, all at quality
-0.965-1.000. Since coalignment is applied to every pair, that noise was
+0.965-1.000. Since coalignment was then applied to every pair, that noise was
 corrupting the *correctly* calibrated products. The envelope correlation
 reproduces the truth at ratio 0.97-1.07 on the former and stays within
 +/-0.9 ns of zero on the latter. The synthetic now carries a realistic
@@ -277,12 +289,14 @@ which is why it was convincing.
 
 **What does survive**: real tidal flexure IS present, measured from the
 GPS alone with no radar (`scripts/diagnostics/gps_flexure.m`). Regressing
-each pass's along-track `ref_z` on its own line mean gives `a(x)` falling
-monotonically by a factor ~4 along the line; GL3 and GL4 agree to 0.02
+each pass's along-track `ref_z` on the tide gives `a(x)` falling
+monotonically by a factor ~6 along the line; GL3 and GL4 agree to 0.02
 despite different reference passes and pass sets, so it is physical
 rather than a GPS baseline ramp. Grounding is toward the north/northeast
 end. The radar simply does not resolve the column-strain signature of it
-in this dataset.
+in this dataset. (The first estimator regressed on each pass's own line
+mean; see 'The tide is CATS2008' under the elasticity section for why
+that is biased and what replaced it.)
 
 **Interpretation caveats that remain**: the five products are four legs
 of ONE line (120-145 m apart, walked ~24 min apart), not independent
@@ -351,6 +365,9 @@ reported strain rates and velocities are converted to per-year.
   the fix for the tide-proportional artefact; see 'Fixed: the
   tide-proportional artefact' above for the mechanism and the estimator
   rationale, and the retraction section for why it must be per column.
+- `vdef.zmotionApplied`, `vdef.pairAligned` - whether a product was
+  built with the z-motion compensation, and whether a vvel pair output
+  is aligned and therefore usable; the gate every loader applies.
 - `vdef.multilook` - boxcar interferogram and coherence from a coregistered
   SLC pair. Cross product per pixel, averaged after - never the reverse.
 - `vdef.differentialRange` - interferogram phase to `dtau(twtt, x)`,
@@ -380,6 +397,56 @@ reported strain rates and velocities are converted to per-year.
   once, under a sum(x) = 0 datum (no privileged reference epoch) with
   robust rejection of inconsistent pairs; the fit residuals are the
   closure errors. Unit test: `scripts/test_invert_network.m`.
+- `vdef.surfaceAdmittance` - the surface tidal admittance `a(x)` from
+  repeat-pass platform heights: per-block regression on an EXTERNAL tide,
+  with the line-mean residual as a pass gate and a common-mode nuisance
+  column. The line mean itself is not a usable regressor (see the
+  elasticity section). Unit test: `scripts/test_surface_admittance.m`.
+- `vdef.surveyLines` - the four independent profiles, in one place.
+  The multipass directory holds FIVE products and the fifth, `EAGER_2022`,
+  is not a fifth line: it is a second build of GL1. The two centre lines
+  are a median 0.5 m apart where the true neighbours are 140, 267 and
+  402 m away, the column counts and end points are identical, and GL1's
+  pass list is a strict superset, its thirteen day segments plus
+  20221209_01. Every table, map and pooled statistic that listed all five
+  therefore counted leg 1 twice; `scripts/figures/leg1_merge_check.m` said
+  so in its header long ago and the product lists were never updated.
+  They are now, and the duplicate is kept only where two builds of the
+  same ice are the point: the systematic-error floor in
+  `scripts/figures/strain_rates.m` and `scripts/figures/tidal_evidence.m`,
+  the between-build matrix, and the coalignment regression test. Those
+  call `[lines, dup] = vdef.surveyLines()` and say why. Worth knowing
+  before quoting either build: at 100 m GL1 comes out consistent with
+  zero while its second build comes out at -2.9 to -3.9 mm per m of tide
+  at every block length, on the same track, differing by one pass and by
+  which pass is the reference.
+
+- `vdef.complexBlocks` and `vdef.tidalStack` - the COHERENT ALL-PAIRS
+  tidal estimator. Every pair's multilooked interferogram is referenced
+  to the surface bin by phase and block-averaged as a complex field,
+  never unwrapped; the tidal column response a(z, x) is then the trial
+  response at which all pairs, counter-rotated by the model phase
+  `phase_sign * 4 pi fc n(z)/c * a * dtide`, add coherently. Every pair
+  constrains every other through the shared model, the response comes
+  out at every depth, and the estimate is independent of the
+  unwrap -> dh -> regression chain. Its peak coherence `F` says how
+  tide-locked the phase is (0.94-1.00 on these lines: the residual
+  mis-registration, seen directly); its 2-D scan takes each pair's
+  MEASURED residual misalignment as a second regressor and reports the
+  collinearity `rcol` per block, because with `|rcol|` near 1 the two
+  are one regressor and the controlled estimate is a ridge, not a
+  number. A self-test injects a known response as a phase rotation and
+  requires it back as an exact shift, which is what pins the phase
+  sign. It also co-estimates the secular trend and, with a quadrature
+  tide regressor, the in-phase and quarter-period components
+  (`scripts/diagnostics/tidal_phase.m` reads the common lag); its error
+  bar is the delete-one-PASS jackknife, because pairs share passes. The
+  driver masks each block below its ice base (`vdef.trackBase`) and
+  takes an optional deeper phase reference (`ref_depth`), saved with the
+  output. The options and their rationale are in the two headers.
+  Driver: `scripts/diagnostics/tidal_stack.m`, figure:
+  `scripts/figures/tidal_stack_figure.m`. Unit test:
+  `scripts/test_tidal_stack.m`.
 - `vdef.beamFlexure` - the grounding zone as an Euler-Bernoulli beam of
   varying thickness on a hydrostatic foundation,
   `d2/dx2[D(x) w''] = rho_w g (A0 - w)` after Holdsworth (1969), solved by
@@ -415,23 +482,101 @@ fitted beams, the tracked-bed `h(x)` against BedMachine and the ApRES bed
 depths, and a forest of `E*` against the published estimates (Vaughan
 1995; Sayag and Worster 2013; Elgart and others 2025; laboratory ice).
 
+**The tide is CATS2008, not the line mean.** `a(x)` is a regression of
+block heights on the tide across passes, and the regressor matters.
+The first estimator used each pass's own line-mean height. Against the
+CATS2008 prediction at each pass mid-time
+(`scripts/diagnostics/cats2008_tide.m`) the line means carry a 13-15 cm
+rms non-tidal residual, about half of it a height offset UNIFORM along
+the line - a per-pass platform/GPS error. A uniform offset enters every
+block and the line-mean regressor with coefficient one, so the slope is
+pulled toward one and the profile compressed toward flat, which the beam
+fit reads as a stiffer beam: on synthetic data with this geometry 14 cm
+rms of such offsets biased `E*` by +58%. `vdef.surfaceAdmittance` now
+regresses on the external tide, uses the line-mean residual as a PASS
+GATE (GL2's first pass, 20221207_03, sat 1.13 m off the tide and alone
+produced its negative-admittance block and its 16 GPa) and as a
+common-mode nuisance column, and the same tide and gate are handed to
+the strain chain (`scripts/test_surface_admittance.m`). One helper,
+`scripts/diagnostics/pass_tide.m`, is where every script that regresses
+on the tide gets it - the flexure driver, the strain loader, the tidal
+response map, the strain-rate profiles, the line sections and the
+per-line tidal deformation figures - so all of them use the same tide
+and drop the same passes. `scripts/figures/strain_flexure.m` draws the
+englacial strain admittance per line against the joint fit's beam, the
+companion of the surface panel in `flexure_inversion.m`.
+`scripts/diagnostics/tidal_depth_profile.m` takes the englacial response
+to a FUNCTION OF DEPTH: the project's Legendre expansion of a column
+profile (`vdef.invertStrainRate`) at order 3 on every pair's stored
+dh(z), the coefficients network-inverted and tide-fitted one by one, and
+the thin-plate shape `A (z_n z - z^2/2)` fitted to them in coefficient
+space to read the neutral-plane depth off the data. The plate shape is
+exactly three Legendre terms - `m_2 = -A H^2/12` alone carries the
+amplitude, `z_n = H/2 - (H/6)(adm_1/adm_2)` is a ratio of two fitted
+numbers, and every order above 2 is identically zero for any plate - so
+the neutral plane is measurable BLOCK BY BLOCK and the order-3 term is a
+shape test that refitting cannot absorb. Fit quality is judged against a
+basis-free run of the same chain, with dh interpolated onto a depth grid
+and every depth network-inverted and tide-fitted on its own. On two legs the expansion
+earns its order, the residual against the pointwise profile falling to
+order 3 and beyond, while on the other two it degrades past order 1.
+
+**The bending amplitudes it reports are not evidence of flexure**, and
+the test that shows this is the project's own systematic floor: run the
+same chain on `EAGER_2022` and `EAGER_2022_GL1`, which are the same leg
+with the first uncalibrated, and the UNCALIBRATED build wins every
+quality criterion - a column response of 6.4 mm/m against 1.7, a bending
+amplitude of 15 sigma against 6.5, and a neutral plane marching
+monotonically along the line at 148-176 m. Coherence, plate shape, a
+tight `z_n` and a clean order sweep are reproduced in full by a build
+known to carry the coalignment artefact, and the difference between the
+two builds exceeds the calibrated build's entire signal. The formal
+errors do not see this. Nothing from this driver should be read as
+flexure until it reproduces between independent builds of the same ice. What no
+regressor removes is the offsets' random projection onto the tide,
+which shifts a whole profile by a constant; the driver therefore prints
+a LEAVE-ONE-PASS-OUT JACKKNIFE of `E*` beside the formal interval, and
+that is the error to quote. The three legs are the same passes walked
+minutes apart, so their agreeing with each other does not test it.
+
 The primary fit is JOINT with the englacial strain admittance - the
 radar's own dh(100 m) per metre of tide, loaded by
 `scripts/diagnostics/load_strain_admittance.m` through the same network
-inversion and reference-invariant fit as the admittance map. The beam
+inversion and reference-invariant fit as the tidal response map. The beam
 predicts it as `amp * nu/(1-nu) * (z_n*zr - zr^2/2) * w''(x)` with the
 SAME shared amplitude as the deflection fit, and that coupling is the
 point: the line-mean normalised `a(x)` constrains only the beam's shape,
 while the strain admittance is absolute and its curvature scale goes as
 `D^(-1/2)` - an amplitude equation the surface expression cannot supply,
 which is what closes the `E*`-clamp trade-off on a window that never
-sees the far field (asserted in `test_beam_flexure.m`, check 11). Two
+sees the far field (asserted in `test_beam_flexure.m`, check 11). Three
 things the joint fit is honest about by construction: it REFUSES to run
 without shape sigmas, because with unweighted shape rows the shared
-amplitude is set by the strain and the constraint silently cancels; and
-it reports per-dataset reduced chi-squareds, so englacial strain beyond
-thin-plate bending shows up as `X2s` above 1 rather than vanishing into
-a pooled variance.
+amplitude is set by the strain and the constraint silently cancels; it
+reports per-dataset reduced chi-squareds against the INPUT sigmas, so
+englacial strain beyond thin-plate bending shows up as `X2s` above 1
+rather than vanishing into a pooled variance; and with `opts.rescale` it
+re-weights the two datasets from their own residuals, because at face
+value the strain rows misfit at 2-4 against 0.1-1 for the shape and were
+carrying twenty-odd times the weight their scatter supports (on the real
+lines the re-weighting leaves `E*` unchanged and brings the joint
+interval down to the shape one - at its real precision the strain adds
+little here). The interval itself is never taken narrower than the input
+sigmas imply: residuals smaller than the sigmas are, on these lines, the
+signature of errors shared by every block, and scaling the interval by
+them made it two to three times narrower than the pass jackknife
+(`test_beam_flexure.m`, checks 14 and 15).
+
+The strain rows can instead come from the coherent tidal stack
+(`elastic_modulus.m`, `strain_source = 'stack'`), with the lever
+integrated from the stack's saved phase reference (`top_depth`) and,
+for the shallow reference, a line-uniform offset (`fit_offset`). The
+driver also runs a STRAIN-ONLY test, with no deflection rows and the
+far-field amplitude fixed (`opts.amplitude`), combined across lines. It
+comes out soft (about 0.5 GPa at nu = 0.3, against 3.6 from the GPS) and
+matches at nu = 0.5. This is a reported result, not a defect. The
+options are documented in `vdef.invertElasticModulus` and the driver
+header.
 
 LOCAL `E*(x)` is available through the inverter's `E_patch` mode (the
 searched modulus applies only inside a window, via the exact
@@ -450,9 +595,8 @@ MATLAB's `patternsearch` plays in Elgart and others, written out so that
 it needs no toolbox and behaves identically in Octave. The far-field
 amplitude enters linearly and is eliminated in closed form at every trial,
 which is what lets a profile with an arbitrary overall scale be inverted:
-`a(x)` here is normalised by a line mean rather than by the tide, because
-this survey never reaches freely floating ice, and only the SHAPE is being
-fitted. The pattern search refines off the lattice but stays INSIDE the
+only the SHAPE is being fitted, so `a(x)` may be per metre of tide, per
+metre of line mean, or in any other units. The pattern search refines off the lattice but stays INSIDE the
 grid it started from, so an ill-conditioned patch ends at the nearest edge
 instead of walking off into moduli the grid never proposed; `R.interior`
 then reports that edge - judged from the refined optimum, not from the
@@ -530,10 +674,24 @@ docker run --rm --platform linux/amd64 -v "$PWD":/work -w /work/scripts \
   gnuoctave/octave:latest octave --no-gui synthetic_vertical_velocity.m
 ```
 
-Figures land in `figs/`. The surface-reference, tide-admittance,
-network-inversion and beam-flexure tests run the same way, with
-`test_surface_reference.m`, `test_tide_admittance.m`,
-`test_invert_network.m` or `test_beam_flexure.m` in place of the script
-name; the OPR adapter's end-to-end test has its own command in
-`opr_vvel/README.md`. CI (`.github/workflows/tests.yml`) runs all six
+Figures land in `figs/`. EVERY figure and every fitted product goes
+there, whichever script drew it and whichever machine it ran on:
+`vdef.figureDir` derives the path from the position of the `+vdef`
+package, so the outputs land beside the code that made them, in the
+working copy locally and in the deployed copy on the processing server.
+The directory is gitignored. Before this there were two absolute scratch
+paths on the server hardcoded into a dozen scripts, and a figure's home
+depended on which script drew it. Set `RADAR_VELOCITY_FIGS` to redirect
+a run without editing anything. The fitted `.mat` products
+(`flexure_fit_cats.mat`, `tidal_stack.mat`, `tidal_depth_profile.mat`)
+live there too, because they are the exact inputs the figures were drawn
+from and several figure scripts reload them to redraw without refitting.
+
+The surface-reference, tide-admittance,
+network-inversion, surface-admittance, tidal-stack and beam-flexure tests
+run the same way, with `test_surface_reference.m`, `test_tide_admittance.m`,
+`test_invert_network.m`, `test_surface_admittance.m`, `test_tidal_stack.m`
+or `test_beam_flexure.m` in place of the script name; the OPR adapter's
+end-to-end test has its own command in `opr_vvel/README.md`. CI
+(`.github/workflows/tests.yml`) runs all eight
 entrypoints in Octave on every push.

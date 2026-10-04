@@ -178,6 +178,9 @@ s_sec = data(:,:,k_sec);
 % in proportion to the tide and the misalignment leaks into the inferred
 % strain (~57 mm of apparent column displacement per metre of tide when
 % this was left uncorrected). See vdef.coalignPair for the mechanism.
+% Products built with param.multipass.zmotion_comp_en = false skip that
+% compensation at the source; for them the predicted shift is zero and
+% coalignment only mops up instrument timing (vdef.zmotionApplied).
 coalign = struct('dtau_bulk', NaN, 'dtau_profile', [], 'dtau_win', [], ...
   'x_win', [], 'quality_win', [], 'quality', NaN, 'peak_ratio', NaN, ...
   'n_win', 0, 'n_win_ok', 0, 'applied', false);
@@ -187,8 +190,20 @@ coalign = struct('dtau_bulk', NaN, 'dtau_profile', [], 'dtau_win', [], ...
 % by MINUS the baseline: predicted = -(ref_z_sec - ref_z_ref)/(c/2).
 % Measured values on the EAGER products come out at 1.2-1.3 times this,
 % so slightly more than the full erroneous compensation survives.
-dtau_bulk_pred = -mean(baseline_z, 'omitnan') / (c/2);
-if param.vvel.coalign_en
+pm_ = [];
+if isfield(mp, 'param_multipass'), pm_ = mp.param_multipass; end
+zc_ = vdef.zmotionApplied(pm_);
+dtau_bulk_pred = -zc_ * mean(baseline_z, 'omitnan') / (c/2);
+% 'auto': coalign only where the compensation put a misalignment in
+do_coalign = param.vvel.coalign_en;
+if ischar(do_coalign) || isstring(do_coalign)
+  assert(strcmpi(do_coalign, 'auto'), 'coalign_en must be true, false or ''auto''');
+  do_coalign = zc_;
+end
+if ~zc_ && ~do_coalign
+  fprintf('Coalign: not applied - product built without z-motion compensation, aligned at the product level\n');
+end
+if do_coalign
   [s_sec, coalign] = vdef.coalignPair(s_ref, s_sec, ...
     struct('Time', Time, 'Surface', Surface, 'fc', fc), param.vvel);
   if coalign.applied
@@ -211,6 +226,9 @@ coalign_peak_ratio = coalign.peak_ratio;
 coalign_n_win      = coalign.n_win;
 coalign_n_win_ok   = coalign.n_win_ok;
 coalign_applied    = coalign.applied;
+% usable alignment: product-level for a surface-coupled build, otherwise
+% only where coalignment removed the compensation's misalignment
+aligned            = ~zc_ || coalign.applied;
 
 [igram, coh] = vdef.multilook(s_ref, s_sec, opts.mlook_window);
 clear s_ref s_sec;
@@ -450,7 +468,7 @@ opr_save(out_fn,'eps_zz','depth_grid','v_fit','S1','S2','epszz_mean','p_quad', .
   'densification_applied','phase_sign','max_valid_bin','block_short', ...
   'dtau_bulk','dtau_bulk_pred','dtau_bulk_profile','dtau_bulk_win', ...
   'coalign_x_win','coalign_quality_win','coalign_n_win','coalign_n_win_ok', ...
-  'coalign_quality','coalign_peak_ratio','coalign_applied', ...
+  'coalign_quality','coalign_peak_ratio','coalign_applied','aligned', ...
   'delta_t','delta_t_sec','delta_t_blk','delta_t_spread_sec', ...
   'baseline_y','baseline_z','fc','Time','Surface','GPS_time', ...
   'Latitude','Longitude','Elevation','Along_track', ...

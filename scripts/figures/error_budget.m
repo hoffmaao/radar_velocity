@@ -38,11 +38,12 @@
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../error_budget.m')"
 
 addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
+addpath(fileparts(mfilename('fullpath')));            % grl_figure
 
 root    = '/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground';
 mp_dir  = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 net_dir = fullfile(root,'CSARP_vvel_net');
-out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures';
+out_dir = vdef.figureDir();
 PASS_NAME = 'EAGER_2022_GL3';
 REF_DEPTH = 100; MAX_BASELINE = 10;
 
@@ -83,7 +84,7 @@ for q = 1:numel(f)
     'tokens','once');
   if isempty(tok), continue; end
   o = load(fullfile(net_dir, f(q).name));
-  if isfield(o,'coalign_applied') && ~o.coalign_applied, continue; end
+  if ~vdef.pairAligned(o), continue; end
   if max(abs(o.baseline_y)) > MAX_BASELINE, continue; end
   Nblk = numel(o.S1); sv = nan(Nblk,1);
   for b = 1:Nblk
@@ -138,7 +139,7 @@ fprintf('  between-build (same leg)      %6.2f\n', FLOOR_BUILD);
 fprintf('  ApRES signal (rate method)    %6.2f\n', SIG_APRES);
 
 %% Figure
-h = figure('Visible','off','Position',[100 100 1120 880],'Color','w');
+[h, GRL] = grl_figure(170, 133.6);
 set(0,'CurrentFigure',h);
 axst = {'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off'};
 
@@ -157,7 +158,7 @@ end
 plot(ax1, [SIG_APRES SIG_APRES], [0.4 numel(val)+0.6], '--', ...
   'Color', PAL.ink, 'LineWidth', 2);
 text(ax1, SIG_APRES, numel(val)+0.55, ' ApRES (rate method)', 'Color', PAL.ink, ...
-  'FontSize', 9, 'VerticalAlignment','top');
+  'FontSize', 8, 'VerticalAlignment','top');
 set(ax1,'YTick',1:numel(val),'YTickLabel',lbl,'YDir','reverse');
 grid(ax1,'on'); set(ax1, axst{:}); ylim(ax1,[0.4 numel(val)+0.6]);
 xlabel(ax1,'mm of column change, top 100 m','Color',PAL.ink);
@@ -214,14 +215,14 @@ pr50 = fit_mm*sqrt(size(N.x,2)/N_ALLLEGS);
 plot(ax4, N_ALLLEGS, pr50, 'p', 'MarkerSize', 16, ...
   'MarkerFaceColor', PAL.cat(4,:), 'MarkerEdgeColor', PAL.ink, 'LineWidth',1.2);
 text(ax4, max(nep), FLOOR_BUILD, 'between-build disagreement ', ...
-  'Color', PAL.cat(2,:), 'FontSize', 9, 'HorizontalAlignment','right', ...
+  'Color', PAL.cat(2,:), 'FontSize', 8, 'HorizontalAlignment','right', ...
   'VerticalAlignment','bottom');
 text(ax4, max(nep), SIG_APRES, 'ApRES (rate method) ', 'Color', PAL.ink, ...
-  'FontSize', 9, 'HorizontalAlignment','right','VerticalAlignment','bottom');
+  'FontSize', 8, 'HorizontalAlignment','right','VerticalAlignment','bottom');
 text(ax4, size(N.x,2), fit_mm, sprintf('  formal, now (%d passes)', size(N.x,2)), ...
-  'Color', PAL.ink, 'FontSize', 9, 'VerticalAlignment','top');
+  'Color', PAL.ink, 'FontSize', 8, 'VerticalAlignment','top');
 text(ax4, N_ALLLEGS, pr50, sprintf('all legs (~%d)  ', N_ALLLEGS), ...
-  'Color', PAL.ink, 'FontSize', 9, 'VerticalAlignment','top', ...
+  'Color', PAL.ink, 'FontSize', 8, 'VerticalAlignment','top', ...
   'HorizontalAlignment','right');
 grid(ax4,'on'); set(ax4, axst{:}); xlim(ax4,[min(nep) max(nep)]);
 ylim(ax4,[0 1.15*FLOOR_BUILD]);
@@ -229,6 +230,6 @@ xlabel(ax4,'number of passes','Color',PAL.ink);
 ylabel(ax4,'1-sigma (mm)','Color',PAL.ink);
 title(ax4,'(d) More epochs cannot cross the reproducibility floor','Color',PAL.ink);
 
-print(h, fullfile(out_dir,'EAGER_2022_error_budget.png'), '-dpng','-r120');
+print(h, fullfile(out_dir,'EAGER_2022_error_budget.png'), '-dpng', sprintf('-r%d', GRL.dpi));
 close(h);
 fprintf('\nWrote %s\n', fullfile(out_dir,'EAGER_2022_error_budget.png'));

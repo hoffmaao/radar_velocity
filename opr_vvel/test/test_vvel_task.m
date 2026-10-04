@@ -572,5 +572,34 @@ assert(isequal(noise_out, noise_b), ...
   'a rejected secondary must come back bit-identical');
 clear noise_a noise_b noise_out;
 
+%% A surface-coupled build is not coaligned, and its pairs stay usable
+% =====================================================================
+% A product built with param.multipass.zmotion_comp_en = false is aligned
+% at the product level, so coalign_en = 'auto' must leave its pairs alone
+% (coalignPair's surface-envelope estimate would only add its own bias),
+% record that nothing was applied, and still mark the pair aligned - every
+% loader gates on vdef.pairAligned, and a false there would silently drop
+% the whole build.
+P = load(in_fn);
+P.param_multipass.multipass.zmotion_comp_en = false;
+pass_name_sc = [pass_name '_sc'];
+P.param_multipass.multipass.pass_name = pass_name_sc;
+save(fullfile(in_dir, sprintf('%s_multipass03.mat', pass_name_sc)), '-v7', '-struct', 'P');
+clear P;
+param_sc = param;
+param_sc.vvel.pass_name = pass_name_sc;
+param_sc.vvel.pairs = [1 3];
+assert(vvel(param_sc), 'vvel did not succeed on the surface-coupled product');
+out_sc = load(fullfile(out_dir, sprintf('%s_vvel_01_03.mat', pass_name_sc)));
+assert(~out_sc.coalign_applied, 'coalignment must not be applied to a surface-coupled build');
+assert(isnan(out_sc.dtau_bulk), 'no coalignment shift may be reported on a surface-coupled build');
+assert(out_sc.aligned && vdef.pairAligned(out_sc), ...
+  'a surface-coupled pair must be marked aligned, or every loader drops it');
+% the gate on outputs written before `aligned` existed is unchanged
+assert(~vdef.pairAligned(struct('coalign_applied', false)), 'legacy unaligned pair must be dropped');
+assert(vdef.pairAligned(struct('coalign_applied', true)), 'legacy aligned pair must be kept');
+assert(vdef.pairAligned(struct()), 'an output predating coalignment counts as usable');
+fprintf('surface-coupled build: coalign not applied, pair kept as aligned\n');
+
 fprintf('\nPASS (%.1f s)\n', toc(t0));
 

@@ -189,6 +189,7 @@ if ~exist(fig_dir,'dir'), mkdir(fig_dir); end
 % '-80-60-40-20' reads as one number. Widening the figure is the portable
 % fix - xticks/xtickformat are not available in both MATLAB and Octave.
 h = figure('Visible','off','Position',[100 100 1000 420]);
+if exist('theme', 'file'), theme(h, 'light'); end   % not the OS dark mode (see grl_figure)
 
 subplot(1,3,1);
 plot(1e12*blk.dtau, V.depth(:,1), '-'); hold on;

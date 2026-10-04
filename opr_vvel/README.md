@@ -12,7 +12,8 @@ strain rate `eps_zz` versus depth and along-track position, using the
    over a line into one `CSARP_multipass/<pass_name>.mat`.
 2. `multipass.m` comp_mode 3 (existing): coregisters every pass onto the
    baseline main - resampling in along-track, motion-compensating the
-   FCS z-motion, matching fast-time axes - and saves
+   FCS z-motion (unless `param.multipass.zmotion_comp_en = false`, the
+   surface-coupled build), matching fast-time axes - and saves
    `<pass_name><midfix>_multipass03.mat` with the complex images stacked
    in `data`.
 3. `vvel.m` / `vvel_task.m` (this module): `vvel_task.m` is a thin OPR
@@ -30,7 +31,12 @@ strain rate `eps_zz` versus depth and along-track position, using the
      `multipass`'s z-motion compensation treats tidal heave as platform
      motion and misaligns the pair in proportion to the tide; this step
      undoes what survives of that shift (see the project README for the
-     full mechanism and history),
+     full mechanism and history). By default (`coalign_en = 'auto'`) it
+     runs only on products built WITH that compensation
+     (`vdef.zmotionApplied`); a surface-coupled build is already aligned
+     and coalignment would bias it - `vvel_defaults.m` has the rationale.
+     The output's `aligned` field records whether the pair is usable, and
+     loaders gate on `vdef.pairAligned`, not on `coalign_applied`,
    - a multilooked interferogram and coherence from the two coregistered
      SLC slices, cross product formed per pixel and only then averaged,
    - the interferogram phase unwrapped along fast time outward from the
@@ -180,5 +186,10 @@ truth.
   the sequential pairing) to a user scratch tree through the `test/stubs`
   opr_* shims. See its header for the table and the `matlab -batch` launch
   line.
+- `server/run_multipass_nozc.sh` rebuilds the four GL products without
+  z-motion compensation into `CSARP_multipass_nozc`, and
+  `server/run_vvel_nozc.sh` then runs the all-pairs networks on them
+  (`CSARP_vvel_net_nozc`, `CSARP_vvel_net_fine_nozc`). Launch lines are in
+  their headers.
 - `local/run_local_pair.m` runs a single pair against a product copied to
   a laptop, in MATLAB or Octave.

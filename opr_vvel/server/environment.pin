@@ -1,9 +1,13 @@
 # Pinned server environment for reproducible processing. reproduce_all.sh
 # checks these at startup and refuses to run on a mismatch, because a
 # different toolbox state silently changes what "reproduced" means.
-# The toolbox SHA includes 458d8c9f, the headless figure-docking guard
-# that multipass needs under matlab -batch.
+# The toolbox SHA includes 625302ae, the headless figure-docking guard
+# that multipass needs under matlab -batch, and 44670b41, the
+# param.multipass.zmotion_comp_en switch (default true, so the standard
+# build is unchanged; false is the surface-coupled build in
+# CSARP_multipass_nozc). The previous pin, 458d8c9f, had gone stale: the
+# docking guard sits in history as 625302ae.
 OPR_TOOLBOX_DIR=/cresis/users/hoffmana_sta/scripts/opr
-OPR_TOOLBOX_SHA=458d8c9fdef51def75cb12567bb31d74b69eb856
+OPR_TOOLBOX_SHA=44670b41c38dbf487b7551ecf2863c5825d3840c
 MATLAB_BIN=/opt/sw/matlab/2024b/bin/matlab
 MATLAB_VERSION=24.2.0.2833386

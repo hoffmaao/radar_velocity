@@ -62,6 +62,7 @@ import os
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
+import grl_style
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import FancyArrowPatch, Polygon, Rectangle
@@ -128,13 +129,17 @@ def panel_a_geometry(ax):
     it merely ridden the tide, and the dh arrow spans DH alone, never the
     heave. dh here is the same quantity as the panel (b) profile and the
     interferogram colourbar: layer displacement relative to the surface."""
-    y_i, y_j = 7.4, 6.5      # surface height at each pass epoch
+    y_i, y_j = 7.6, 6.4      # surface height at each pass epoch
     B = y_i - y_j            # tidal heave of the surface between passes
-    DH = 0.6                 # layer displacement relative to the surface,
+    DH = 0.75                # layer displacement relative to the surface,
                              # exaggerated (it is mm against m of heave)
                              # but kept well under B so the two read apart
-    # pass i sits right of the B_z label so its ray clears the text
-    xi, xj = 3.7, 5.6        # antenna positions along the line
+    # pass i sits right of the B_z label so its ray clears the text. At
+    # print width "$B_z$ = tide" is wider relative to the panel than it was
+    # on the old 320 mm canvas, and 3.7 put the ray through the label - so
+    # both antennas move right. The surface runs to 9.7, so pass j's label
+    # at xj + 0.4 still has room.
+    xi, xj = 4.5, 6.4        # antenna positions along the line
 
     # coordinate frame, top right: z up, x (along track) right, y into
     # the page
@@ -145,28 +150,28 @@ def panel_a_geometry(ax):
                                  color=INK, lw=1.1, mutation_scale=9))
     ax.plot(ox, oy, "o", ms=7, mfc="white", mec=INK, mew=1.0)
     ax.plot(ox, oy, "x", ms=4, color=INK)
-    ax.text(ox + 0.05, oy + 0.95, "$z$", fontsize=9, color=INK)
-    ax.text(ox + 1.05, oy + 0.1, "$x$", fontsize=9, color=INK)
-    ax.text(ox - 0.3, oy - 0.15, "$y$", fontsize=9, color=INK, ha="right")
+    ax.text(ox + 0.05, oy + 0.95, "$z$", fontsize=8, color=INK)
+    ax.text(ox + 1.05, oy + 0.1, "$x$", fontsize=8, color=INK)
+    ax.text(ox - 0.3, oy - 0.15, "$y$", fontsize=8, color=INK, ha="right")
 
     # the surface at the two epochs: the whole shelf rides the tide
     ax.plot([0.3, 9.7], [y_i, y_i], color=ORANGE, lw=2.2)
     ax.plot([0.3, 9.7], [y_j, y_j], color=BLUE, lw=1.6, ls="--")
-    ax.text(9.55, y_i + 0.25, "air", fontsize=8.5, color=INK_SOFT, ha="right")
-    ax.text(9.55, y_j - 0.65, "ice", fontsize=8.5, color=INK_SOFT, ha="right")
+    ax.text(9.55, y_i + 0.25, "air", fontsize=8, color=INK_SOFT, ha="right")
+    ax.text(9.55, y_j - 0.65, "ice", fontsize=8, color=INK_SOFT, ha="right")
 
     # vertical baseline = the tidal heave of the surface
     ax.add_patch(FancyArrowPatch((0.9, y_j), (0.9, y_i), arrowstyle="<|-|>",
-                                 color=AQUA, lw=1.2, mutation_scale=8))
-    ax.text(1.25, (y_i + y_j) / 2, "$B_z$ = tide", fontsize=9, color=AQUA,
+                                 color=AQUA, lw=1.0, mutation_scale=5))
+    ax.text(1.25, (y_i + y_j) / 2, "$B_z$ = tide", fontsize=8, color=AQUA,
             ha="left", va="center")
 
     # antennas ON the surface, one per epoch
     ax.plot(xi, y_i + 0.1, "s", ms=6, color=ORANGE)
-    ax.text(xi + 0.4, y_i + 0.22, "pass $i$", fontsize=9, color=ORANGE,
+    ax.text(xi + 0.4, y_i + 0.22, "pass $i$", fontsize=8, color=ORANGE,
             ha="left", va="bottom")
     ax.plot(xj, y_j + 0.1, "s", ms=6, color=BLUE)
-    ax.text(xj + 0.4, y_j + 0.22, "pass $j$", fontsize=9, color=BLUE,
+    ax.text(xj + 0.4, y_j + 0.22, "pass $j$", fontsize=8, color=BLUE,
             ha="left", va="bottom")
 
     # nadir rays to the layer at each epoch. The layer baseline sits high
@@ -188,17 +193,17 @@ def panel_a_geometry(ax):
     xs = np.linspace(XL0, XL1, 50)
     ax.plot([XL0, XL1], [LY0, LY1], color=ORANGE, lw=1.6)
     ax.plot(xs, lay(xs) - (B + DH), ls=":", color=BLUE, lw=1.3)
-    ax.text(1.15, LY0 + 0.2, "layer", fontsize=9, color=ORANGE, ha="left",
+    ax.text(1.15, LY0 + 0.2, "layer", fontsize=8, color=ORANGE, ha="left",
             va="bottom")
     # where the layer would sit had it only ridden the tide: the rigid part
     # the method cannot see. Faint and local to the dh annotation.
     xt = np.array([3.95, 4.75])
     ax.plot(xt, lay(xt) - B, ls="--", color=INK_SOFT, lw=0.8)
-    ax.add_patch(FancyArrowPatch((4.3, lay(4.3) - B),
-                                 (4.3, lay(4.3) - B - DH),
-                                 arrowstyle="<->", color=INK, lw=1.1,
-                                 mutation_scale=7))
-    ax.text(4.38, lay(4.3) - (B + DH) - 0.3, "$dh$", fontsize=9, color=INK,
+    _ya, _yb = lay(4.3) - B, lay(4.3) - B - DH
+    ax.plot([4.3, 4.3], [_ya, _yb], color=INK, lw=1.0, zorder=6)
+    for _y in (_ya, _yb):
+        ax.plot([4.16, 4.44], [_y, _y], color=INK, lw=1.0, zorder=6)
+    ax.text(4.38, lay(4.3) - (B + DH) - 0.3, "$dh$", fontsize=8, color=INK,
             ha="left", va="top")
 
     ax.set_xlim(0, 10); ax.set_ylim(0.9, 10.4)
@@ -219,7 +224,7 @@ def panel_a_block(ax):
     ax.add_patch(Polygon([(X1, 1.9), (X1, 2.6), (X1 + SKX, 3.5),
                           (X1 + SKX, 2.8)], closed=True, fc="#bcd6ee",
                          ec="none"))
-    ax.text(X0 + 0.3, 2.22, "ocean", fontsize=8.5, color=INK_SOFT)
+    ax.text(X0 + 0.3, 2.22, "ocean", fontsize=8, color=INK_SOFT)
 
     # the ice column
     ax.add_patch(Rectangle((X0, 2.6), X1 - X0, 2.6, fc=ICE, ec=INK_SOFT,
@@ -260,11 +265,18 @@ def panel_a_block(ax):
                     zorder=9)
     # what moves the layers
     ax.plot(0.8, 8.0, "v", ms=8, color=YELLOW, zorder=5)
-    ax.text(1.15, 8.0, "accumulation", fontsize=8.5, color=INK, va="center")
-    ax.add_patch(FancyArrowPatch((0.55, 5.5), (0.55, 3.9), arrowstyle="-|>",
-                                 color=MAGENTA, lw=2.4, mutation_scale=13))
-    ax.text(0.42, 3.6, "vertical\nvelocity", fontsize=8.5, color=INK,
-            ha="center", va="top")
+    ax.text(1.15, 8.0, "accumulation", fontsize=8, color=INK, va="center")
+    # The arrow moves right of the rotated label; at x=0.55 its head, which
+    # is ~0.3 data units across, ran through the glyphs of "vertical
+    # velocity" sitting at 0.22.
+    ax.add_patch(FancyArrowPatch((0.88, 5.5), (0.88, 3.9), arrowstyle="-|>",
+                                 color=MAGENTA, lw=2.0, mutation_scale=11))
+    # Set VERTICALLY beside the arrow. At print width the panel has only
+    # ~1.3 data units of clear space left of the block, which will not hold
+    # "velocity" horizontally at 8 pt; rotated, the label needs only its
+    # line height and drops into empty panel instead of over the artwork.
+    ax.text(0.24, 4.7, "vertical velocity", fontsize=8, color=INK,
+            rotation=90, ha="center", va="center")
 
     ax.set_xlim(0, 10); ax.set_ylim(1.2, 10.4)
     ax.axis("off")
@@ -298,8 +310,8 @@ def panel_a_igram(ax, cax, d):
                         vmin=-50, vmax=50, shading="nearest", rasterized=True)
     ax.set_ylim(300, 0)
     ax.set_xlim(x.min(), x.max())
-    ax.set_xlabel("along track (km)", fontsize=9)
-    ax.set_ylabel("depth below surface (m)", fontsize=9)
+    ax.set_xlabel("along track (km)", fontsize=8)
+    ax.set_ylabel("depth below surface (m)", fontsize=8)
     ax.tick_params(labelsize=8, length=3, color=INK_SOFT)
     for s in ax.spines.values():
         s.set_color(INK_SOFT); s.set_linewidth(0.8)
@@ -313,7 +325,7 @@ def panel_a_igram(ax, cax, d):
            dtide, dt_days))
 
     cb = plt.colorbar(pcm, cax=cax)
-    cb.set_label("layer displacement rel. surface, $dh$ (mm)", fontsize=8.5)
+    cb.set_label("layer displacement, $dh$ (mm)", fontsize=8)
     cb.ax.tick_params(labelsize=8)
     cb.outline.set_edgecolor(INK_SOFT)
     cb.outline.set_linewidth(0.8)
@@ -327,8 +339,8 @@ def panel_b(ax):
     """The two-pass column sketch; the dh(z) response lives in its own
     formal axes (panel_b_profile)."""
     for k, (x0, col, lbl) in enumerate(
-            [(1.6, BLUE, "pass at low tide"),
-             (4.4, ORANGE, "pass at high tide")]):
+            [(1.6, BLUE, "low tide"),
+             (4.4, ORANGE, "high tide")]):
         ax.plot([x0, x0], [0.4, 7.6], color=INK_SOFT, lw=0.8)
         # surface return, aligned between passes
         ax.plot([x0 - 0.35, x0 + 0.35], [7.2, 7.2], color=col, lw=3.0)
@@ -337,7 +349,7 @@ def panel_b(ax):
             # high-tide pass's layers sit SHALLOWER relative to the surface
             y = 7.2 - z + (g if k == 1 else 0.0)
             ax.plot([x0 - 0.28, x0 + 0.28], [y, y], color=col, lw=2.0)
-        ax.text(x0, 7.95, lbl, fontsize=9, color=col, ha="center")
+        ax.text(x0, 7.95, lbl, fontsize=8, color=col, ha="center")
     # connectors showing the growing offset
     for z, g in zip(ZS, GROW):
         ax.annotate("", xy=(4.05, 7.2 - z + g), xytext=(1.95, 7.2 - z),
@@ -356,8 +368,8 @@ def panel_b_profile(ax):
     ax.set_xlim(-0.04, GROW[-1] * 1.18)
     ax.set_ylim(ZS[-1] * 1.18, -0.15)               # depth increases down
     ax.set_xticks([]); ax.set_yticks([])
-    ax.set_xlabel("layer displacement, dh(z)", fontsize=9, color=INK)
-    ax.set_ylabel("depth below surface, z", fontsize=9, color=INK)
+    ax.set_xlabel("layer displacement, dh(z)", fontsize=8, color=INK)
+    ax.set_ylabel("depth below surface, z", fontsize=8, color=INK)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     for side in ("left", "bottom"):
@@ -415,9 +427,9 @@ def panel_c(ax, d):
             color=ORANGE, lw=1.8, zorder=3)
     # point the callout at the later end of the chord, wherever the pair sits
     ie = ia if t[ia] > t[ja] else ja
-    ax.annotate("the pair used in\ndisplacement figure",
+    ax.annotate("pair shown above",
                 xy=(t[ie] + 0.011 * span, eta[ie] + 0.013 * y_hi),
-                xytext=(t[ie] + 0.18 * span, -0.73 * y_hi),
+                xytext=(t[ie] + 0.10 * span, -0.92 * y_hi),
                 fontsize=8, color=ORANGE, ha="center",
                 arrowprops=dict(arrowstyle="->", color=ORANGE, lw=0.9,
                                 shrinkB=2))
@@ -425,7 +437,7 @@ def panel_c(ax, d):
         ax.plot(ti, ei, "o", ms=6, mfc=ORANGE, mec="white", mew=0.8,
                 zorder=4)
     ax.text(ts[-1] + 0.015 * span, float((design(ts[-1:]) @ coef)[0]), "tide(t)",
-            fontsize=9, color=INK_SOFT, va="center")
+            fontsize=8, color=INK_SOFT, va="center")
 
     # generic axes: the per-epoch displacement rides the tide in time, so
     # the panel reads as the estimation concept, not a tide gauge record.
@@ -434,8 +446,8 @@ def panel_c(ax, d):
     ax.set_xlim(x_lo, x_hi)
     ax.set_ylim(-y_hi, y_hi)
     ax.set_xticks([]); ax.set_yticks([])
-    ax.set_xlabel("time", fontsize=9, color=INK)
-    ax.set_ylabel("displacement", fontsize=9, color=INK)
+    ax.set_xlabel("time", fontsize=8, color=INK)
+    ax.set_ylabel("displacement", fontsize=8, color=INK)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     for side in ("left", "bottom"):
@@ -446,12 +458,12 @@ def panel_c(ax, d):
 def panel_c_formula(ax):
     """The joint fit, with its two terms named."""
     ax.text(5.0, 2.15, r"$x_k = a + b\,t_k + c\,\mathrm{tide}(t_k)$",
-            fontsize=12, color=INK, ha="center")
+            fontsize=9.5, color=INK, ha="center")
     ax.annotate("secular strain rate", xy=(4.3, 1.75), xytext=(1.2, 0.35),
-                fontsize=9, color=INK,
+                fontsize=8, color=INK,
                 arrowprops=dict(arrowstyle="->", color=INK_SOFT, lw=0.9))
     ax.annotate("tidal response", xy=(6.3, 1.75), xytext=(7.2, 0.35),
-                fontsize=9, color=INK,
+                fontsize=8, color=INK,
                 arrowprops=dict(arrowstyle="->", color=INK_SOFT, lw=0.9))
     ax.set_xlim(0, 10); ax.set_ylim(0, 3)
     ax.axis("off")
@@ -460,7 +472,11 @@ def panel_c_formula(ax):
 def main():
     d = load_igram()
 
-    fig = plt.figure(figsize=(12.6, 8.9), dpi=150)
+    grl_style.apply()
+    # Authored AT PRINT SIZE: two-column width, so the 8 pt set here is
+    # 8 pt on the page. Was 12.6 in (320 mm), which scaled into a 170 mm
+    # column turned every label into 4-6 pt.
+    fig = plt.figure(figsize=grl_style.figsize(grl_style.TWO_COL_MM, 0.72))
     fig.patch.set_facecolor("white")
 
     # panel designators and header lines are deliberately absent: the

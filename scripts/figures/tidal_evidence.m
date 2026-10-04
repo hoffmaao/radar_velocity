@@ -45,13 +45,19 @@
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../tidal_evidence.m')"
 
 addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
+addpath(fileparts(mfilename('fullpath')));            % grl_figure
 
 root     = '/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground';
 mp_dir   = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
-out_dir  = '/kucresis/scratch/hoffmana_sta/vvel/figures';
+out_dir  = vdef.figureDir();
 
-PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
-              'EAGER_2022_GL3','EAGER_2022_GL4'};
+% The four lines, plus the duplicate build of GL1. EAGER_2022 is NOT a
+% fifth profile - it is a second build of GL1 sharing thirteen of its
+% fourteen passes (vdef.surveyLines) - but the floor computed below needs
+% two builds of the SAME ice, so it is loaded here deliberately and must
+% not be read as another line.
+[LINES, DUP] = vdef.surveyLines();
+PASS_NAMES = [{DUP.name}, LINES];
 REF_DEPTH    = 100;
 MAX_BASELINE = 10;
 BLOCK        = 200;
@@ -98,7 +104,7 @@ fprintf('\nfloor %.1f mm per m of tide; ApRES (rate method) -1.24 mm at %d m\n',
   FLOOR_MM, REF_DEPTH);
 
 %% Figure
-h = figure('Visible','off','Position',[100 100 1120 940],'Color','w');
+[h, GRL] = grl_figure(170, 142.7);
 set(0,'CurrentFigure',h);
 axst = {'GridAlpha',0.15,'XColor',PAL.ink,'YColor',PAL.ink,'Box','off'};
 
@@ -143,7 +149,7 @@ for pnl = 1:2
     set(lg,'TextColor',PAL.ink,'Box','off','FontSize',8);
   else
     text(ax, 0.02*xmax, -FLOOR_MM, ' method floor', 'Color', PAL.ink_soft, ...
-      'FontSize', 9, 'VerticalAlignment','top');
+      'FontSize', 8, 'VerticalAlignment','top');
   end
 end
 
@@ -167,10 +173,10 @@ grid(ax3,'on'); set(ax3, axst{:}); xlim(ax3,[0 xmax]);
 xlabel(ax3,'Along track (km)','Color',PAL.ink);
 ylabel(ax3,'GPS surface tidal admittance a(x)','Color',PAL.ink);
 title(ax3,'(c) The scalar residual must flip sign where a(x) = 1','Color',PAL.ink);
-text(ax3, 0.02*xmax, 1, ' a(x) = 1', 'Color', PAL.expect, 'FontSize', 9, ...
+text(ax3, 0.02*xmax, 1, ' a(x) = 1', 'Color', PAL.expect, 'FontSize', 8, ...
   'VerticalAlignment','bottom');
 text(ax3, 0.98*xmax, yl(2), 'dotted: panel (a) hinges ', 'Color', PAL.ink, ...
-  'FontSize', 9, 'HorizontalAlignment','right','VerticalAlignment','top');
+  'FontSize', 8, 'HorizontalAlignment','right','VerticalAlignment','top');
 
 % (d) the correlation collapse
 ax4 = axes('parent',h,'Position',[0.555 0.085 0.40 0.36]);
@@ -189,7 +195,7 @@ set(ax4,'XTick',[1 2],'XTickLabel',{'scalar (v2)','per-column (v3)'});
 ylabel(ax4,'Correlation with the artefact predictor','Color',PAL.ink);
 title(ax4,'(d) The response stops tracking the artefact','Color',PAL.ink);
 
-print(h, fullfile(out_dir,'EAGER_2022_tidal_evidence.png'), '-dpng', '-r120');
+print(h, fullfile(out_dir,'EAGER_2022_tidal_evidence.png'), '-dpng', sprintf('-r%d', GRL.dpi));
 close(h);
 fprintf('\nWrote %s\n', fullfile(out_dir,'EAGER_2022_tidal_evidence.png'));
 

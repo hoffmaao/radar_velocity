@@ -30,8 +30,13 @@ if ~exist('VVEL_SUFFIX','var'), VVEL_SUFFIX = '_v3'; end
 vvel_dir = ['/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_vvel' VVEL_SUFFIX];
 mp_dir   = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 
-PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
-              'EAGER_2022_GL3','EAGER_2022_GL4'};
+% The four lines, plus the duplicate build of GL1. EAGER_2022 is NOT a
+% fifth profile - it is a second build of GL1 sharing thirteen of its
+% fourteen passes (vdef.surveyLines) - but the floor computed below needs
+% two builds of the SAME ice, so it is loaded here deliberately and must
+% not be read as another line.
+[LINES, DUP] = vdef.surveyLines();
+PASS_NAMES = [{DUP.name}, LINES];
 REF_DEPTH    = 100;
 MAX_BASELINE = 10;
 TOL          = 100;    % [m] blocks closer than this along track are compared

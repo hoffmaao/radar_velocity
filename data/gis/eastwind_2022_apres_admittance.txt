@@ -1,0 +1,28 @@
+# ApRES tidal admittance per station, mm of column change per
+# metre of tide, DEPTH-MATCHED to the radar: mean strain over
+# 38-101 m true depth against the ribbon's 0-100 m.
+# Positive = column lengthens as the tide rises, as for the radar.
+# site  mm_per_m  sigma  R2  n_pairs
+#
+# THIS IS NOT THE ApRES SCALAR. That is the slope of ApRES's own fit
+# interval - 101-224 m as reported, 115-238 m once its constant
+# er=3.18 range is mapped onto the radar firn scale - which is a
+# deeper column than the ribbon. At GA04 the scalar is -1.24 while
+# the SAME data over 38-101 m gives +1.24, against the
+# ribbon's +3.21. The apparent instrument conflict on the map was a
+# depth mismatch, not a disagreement. ApRES cannot see the firn, so
+# the match is 38-101 m against 0-100 m, not exact.
+#
+# Rate method: per-depth regression of fine_dh_m on the CATS2008 tide
+# RATE over pairs of 0.01-0.10 d, so no chaining. Tide comes
+# from the nearest WET cell - GA01/GA04/GA05 fall inside the CATS2008
+# grounded mask and are served from 2.0 km away; per-site tide differs
+# from one centroid series by 0.2%, so that is defensibility, not a
+# correction.
+#
+# ONLY SITES PASSING ALL OF: >= 20 pairs, R2 >= 0.50, and a
+# stable tracked bed are listed. Excluded sites are not failures of
+# the ice - they are stations that recorded too few short pairs, or
+# whose bed pick wanders, so no tidal admittance can be read.
+GA01 1.238 0.452 0.266 269
+GA04 3.172 0.337 0.748 276

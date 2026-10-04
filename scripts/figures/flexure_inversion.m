@@ -48,7 +48,7 @@ addpath(root);                                   % +vdef
 addpath(fullfile(root,'scripts','diagnostics')); % the inversion driver
 
 if ~isfield(opts,'out_dir') || isempty(opts.out_dir)
-  opts.out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures_flexure';
+  opts.out_dir = vdef.figureDir();
 end
 if ~isfield(opts,'h_sweep') || isempty(opts.h_sweep)
   opts.h_sweep = 200:25:400;
@@ -97,7 +97,7 @@ OUT.E_sweep = Esw;
 
 %% Draw
 cols = [0.11 0.42 0.69; 0.89 0.47 0.10; 0.20 0.60 0.25; 0.75 0.20 0.30];
-hf = figure('Visible','off','Position',[100 100 1150 780]);
+[hf, GRL] = grl_figure(170, 115.3);
 set(0,'CurrentFigure',hf);
 
 % ---- (a) observation and fit
@@ -124,12 +124,16 @@ end
 if isfinite(xlo) && xhi > xlo, xlim(ax, [xlo xhi]); end
 grid(ax,'on'); box(ax,'on');
 xlabel(ax,'Seaward distance (km)');
-ylabel(ax,'a(x) (line-mean units)');
+if isfield(D,'tide') && strcmp(D.tide,'cats')
+  ylabel(ax,'a(x) (m per m of CATS2008 tide)');
+else
+  ylabel(ax,'a(x) (line-mean units)');
+end
 title(ax,'(a)  Tidal admittance and fitted beam');
 legend(ax, hleg, lleg, 'Location','SouthEast');
 yl = get(ax,'YLim');
 text(xlo+0.15, yl(1)+0.92*diff(yl), 'triangles: fitted clamp', ...
-  'parent', ax, 'FontSize', 9);
+  'parent', ax, 'FontSize', 8);
 
 % ---- (b) misfit surface for one line
 ib = find(~cellfun(@isempty, R(CASE,:)), 1);
@@ -192,7 +196,7 @@ for i = 1:nL
 end
 if isfinite(elo) && ehi > elo
   plot(ax, [elo ehi], [1 1], 'k--', 'LineWidth', 1);
-  text(elo*1.1, 1.5, 'one sigma', 'parent', ax, 'FontSize', 9);
+  text(elo*1.1, 1.5, 'one sigma', 'parent', ax, 'FontSize', 8);
   xlim(ax, [elo ehi]);
 end
 set(ax,'XScale','log'); grid(ax,'on'); box(ax,'on'); ylim(ax,[0 9]);
@@ -219,16 +223,16 @@ yl = get(ax,'YLim');
 for hh = [265 295]
   plot(ax, [hh hh], yl, 'k:', 'LineWidth', 1);
 end
-text(266, yl(2)/1.5, 'ApRES', 'parent', ax, 'FontSize', 9);
-text(296, yl(2)/3.5, 'radar', 'parent', ax, 'FontSize', 9);
+text(266, yl(2)/1.5, 'ApRES', 'parent', ax, 'FontSize', 8);
+text(296, yl(2)/3.5, 'radar', 'parent', ax, 'FontSize', 8);
 xlabel(ax,'Assumed ice thickness (m)'); ylabel(ax,'E* (GPa)');
 title(ax,'(d)  E* moves as h^{-3}');
 text(xr(2)-5, 0.75, 'Elgart+ 2025, three Ross sites', 'parent', ax, ...
-  'FontSize', 9, 'HorizontalAlignment', 'right');
+  'FontSize', 8, 'HorizontalAlignment', 'right');
 
 if ~exist(opts.out_dir,'dir'), mkdir(opts.out_dir); end
 out_fn = fullfile(opts.out_dir,'EAGER_2022_elastic_modulus.png');
-print(hf, out_fn, '-dpng', '-r140');
+print(hf, out_fn, '-dpng', sprintf('-r%d', GRL.dpi));
 fprintf('Wrote %s\n', out_fn);
 
 end
@@ -242,9 +246,18 @@ end
 function o = with_line_strain(o, Li, Ri)
 %WITH_LINE_STRAIN Attach a line's englacial strain dataset, when the fit
 %   used one. The ref_depth comes from the fit's echoed strain spec, so a
-%   refit here fits the same observable the headline fit did.
+%   refit here fits the same observable the headline fit did - and the
+%   two datasets keep the headline fit's WEIGHTS: the driver re-scales
+%   each dataset's sigmas from its own residuals (opts.rescale), and a
+%   refit that re-derived them on a coarser grid would draw a misfit
+%   surface for a slightly different problem. Fits saved before the
+%   scales existed carry none and are used as they are.
+ka = 1; ks = 1;
+if isfield(Ri,'sigma_scale_shape'),  ka = Ri.sigma_scale_shape;  end
+if isfield(Ri,'sigma_scale_strain'), ks = Ri.sigma_scale_strain; end
+o.sigma = o.sigma * ka;
 if Ri.has_strain && isfield(Li,'s_x') && numel(Li.s_x) >= 3
-  o.strain = struct('x', Li.s_x, 'y', Li.s_y, 'sigma', Li.s_sig, ...
+  o.strain = struct('x', Li.s_x, 'y', Li.s_y, 'sigma', Li.s_sig * ks, ...
                     'ref_depth', Ri.strain_spec.ref_depth, ...
                     'avg_width', o.avg_width);
 end

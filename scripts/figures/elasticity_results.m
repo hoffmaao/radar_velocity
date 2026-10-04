@@ -42,7 +42,7 @@ addpath(root);                                   % +vdef
 addpath(fullfile(root,'scripts','diagnostics')); % the inversion driver
 
 if ~isfield(opts,'out_dir') || isempty(opts.out_dir)
-  opts.out_dir = '/kucresis/scratch/hoffmana_sta/vvel/figures_flexure';
+  opts.out_dir = vdef.figureDir();
 end
 if ~isfield(opts,'fit'), opts.fit = []; end
 
@@ -82,11 +82,11 @@ cols = [0.11 0.42 0.69; 0.89 0.47 0.10; 0.20 0.60 0.25; 0.75 0.20 0.30];
 grey = [0.62 0.62 0.62];
 linecol = @(i) cols(mod(i-1,size(cols,1))+1,:);
 
-hf = figure('Visible','off','Position',[100 100 1280 420]);
+[hf, GRL] = grl_figure(170, 68);
 set(0,'CurrentFigure',hf);
 
 %% ---- (a) observation and fits
-ax = axes('parent',hf,'Position',[0.055 0.13 0.27 0.78]);
+ax = axes('parent',hf,'Position',[0.065 0.19 0.245 0.68]);
 hold(ax,'on'); xlo = inf; xhi = -inf; hleg = []; lleg = {};
 for i = 1:nL
   cc = linecol(i); if ~con(i), cc = grey; end
@@ -108,12 +108,12 @@ for i = 1:nL
 end
 if isfinite(xlo) && xhi > xlo, xlim(ax,[xlo xhi]); end
 grid(ax,'on'); box(ax,'on');
-xlabel(ax,'Seaward distance (km)'); ylabel(ax,'a(x) (line-mean units)');
-title(ax,'(a)  Tidal flexure and fitted beams');
+xlabel(ax,'Seaward distance (km)'); ylabel(ax,'a(x) (m per m of tide)');
+title(ax,'(a)  Tidal flexure','FontSize',8);
 legend(ax, hleg, lleg, 'Location','SouthEast');
 
 %% ---- (b) thickness
-ax = axes('parent',hf,'Position',[0.385 0.13 0.25 0.78]);
+ax = axes('parent',hf,'Position',[0.385 0.19 0.185 0.68]);
 hold(ax,'on');
 bm_drawn = false;
 for i = 1:nL
@@ -154,10 +154,10 @@ end
 grid(ax,'on'); box(ax,'on');
 if isfinite(xlo) && xhi > xlo, xlim(ax,[max(xlo,-0.5) xhi]); end
 xlabel(ax,'Seaward distance (km)'); ylabel(ax,'Ice thickness (m)');
-title(ax,'(b)  Tracked bed, BedMachine, ApRES');
+title(ax,'(b)  Ice thickness','FontSize',8);
 
 %% ---- (c) the modulus in context
-ax = axes('parent',hf,'Position',[0.70 0.13 0.285 0.78]);
+ax = axes('parent',hf,'Position',[0.78 0.19 0.205 0.68]);
 hold(ax,'on');
 XL = [0.4 22];
 
@@ -167,10 +167,21 @@ patch(ax, [0.6 9 9 0.6], [0 0 100 100], [0.92 0.92 0.92], 'EdgeColor','none');
 rows = {};   % {label, y} accumulated as they are drawn
 y = 0;
 
-% per-line, tracked bed
+% per-line, tracked bed. The formal interval is the solid whisker; behind
+% it, where the driver ran the leave-one-pass-out jackknife, the wider
+% pale bar is the jackknife interval - the error the formal one cannot
+% see, because every block of a line shares its passes and a per-pass
+% height error moves the whole profile at once. Fits saved before the
+% jackknife existed carry no such field and draw the formal one alone.
+have_jack = false;
 for i = 1:nL
   if ~con(i), continue; end
   y = y + 1; Ri = R{CASE,i};
+  if isfield(Ri,'E_lo_jack') && isfinite(Ri.E_lo_jack) && isfinite(Ri.E_hi_jack)
+    plot(ax, [Ri.E_lo_jack Ri.E_hi_jack]/1e9, [y y], '-', ...
+      'Color', 0.55*linecol(i) + 0.45*[1 1 1], 'LineWidth', 5);
+    have_jack = true;
+  end
   plot(ax, [Ri.E_lo Ri.E_hi]/1e9, [y y], '-', 'Color', linecol(i), 'LineWidth', 1.6);
   plot(ax, Ri.E/1e9, y, 'o', 'Color', linecol(i), 'MarkerSize', 6, ...
     'MarkerFaceColor', linecol(i));
@@ -252,11 +263,15 @@ set(ax,'YTick', cell2mat(rows(:,2)), 'YTickLabel', rows(:,1));
 grid(ax,'on'); box(ax,'on');
 set(ax,'YGrid','off');
 xlabel(ax,'E* (GPa)');
-title(ax,'(c)  Effective Young''s modulus');
+if have_jack
+  title(ax, {'(c)  Effective modulus', '\rm\fontsize{7}pale bar: pass jackknife'}, 'FontSize', 8);
+else
+  title(ax,'(c)  Effective modulus','FontSize',8);
+end
 
 if ~exist(opts.out_dir,'dir'), mkdir(opts.out_dir); end
 out_fn = fullfile(opts.out_dir,'EAGER_2022_elasticity_results.png');
-print(hf, out_fn, '-dpng', '-r140');
+print(hf, out_fn, '-dpng', sprintf('-r%d', GRL.dpi));
 fprintf('Wrote %s\n', out_fn);
 
 end
