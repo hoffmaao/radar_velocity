@@ -37,10 +37,10 @@ addpath(fileparts(fileparts(here)));             % +vdef
 addpath(here);                                   % grl_figure
 if ~isfield(opts,'out_dir') || isempty(opts.out_dir), opts.out_dir = vdef.figureDir(); end
 if ~isfield(opts,'files') || isempty(opts.files), opts.files = {'tidal_stack_nozc.mat', 'tidal_stack_nozc_ref60.mat'}; end
-if ~isfield(opts,'ref_m') || isempty(opts.ref_m), opts.ref_m = [5 60]; end
 if ~isfield(opts,'split_km') || isempty(opts.split_km), opts.split_km = 1.5; end
 A = load(fullfile(opts.out_dir, opts.files{1})); S5 = A.OUT;
 B = load(fullfile(opts.out_dir, opts.files{2})); S60 = B.OUT;
+if ~isfield(opts,'ref_m') || isempty(opts.ref_m), opts.ref_m = [recorded_ref(S5, 5) recorded_ref(S60, 60)]; end
 order = {'EAGER_2022_GL1','EAGER_2022_GL2','EAGER_2022_GL3','EAGER_2022_GL4'};
 lab = {'GL1','GL2','GL3','GL4'};
 
@@ -99,4 +99,12 @@ annotation(h, 'textbox', [x0 0.0 0.90 0.085], 'String', ...
 out_fn = fullfile(opts.out_dir, 'EAGER_2022_tidal_stack_depth.png');
 print(h, out_fn, '-dpng', sprintf('-r%d', GRL.dpi)); close(h);
 fprintf('Wrote %s\n', out_fn);
+end
+
+function r = recorded_ref(OUT, legacy)
+% the phase reference tidal_stack saved with the file [m]; NaN is its 50 ns
+% default (~5 m), and files saved before it was recorded take the legacy value
+if ~isfield(OUT, 'ref_depth'), r = legacy; return; end
+r = OUT(1).ref_depth;
+if isnan(r), r = 5; end
 end
