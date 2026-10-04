@@ -89,6 +89,18 @@ coalignment went per-column - the applied profile and per-window
 diagnostics (`dtau_bulk_profile`, `dtau_bulk_win`, `coalign_x_win`,
 `coalign_quality_win`, `coalign_n_win`, `coalign_n_win_ok`).
 
+**Removed at the source: the surface-coupled build.** The radar rides on
+the ice, so `ref_z` is the tide and the compensation itself is the error.
+The four GL products are now rebuilt with
+`param.multipass.zmotion_comp_en = false` into `CSARP_multipass_nozc`
+(`opr_vvel/server/run_multipass_nozc.sh`, then `run_vvel_nozc.sh`; the
+toolbox commit with that switch is pinned in
+`opr_vvel/server/environment.pin`). Those products are aligned at the
+product level, so `coalign_en` now defaults to `'auto'` and coalignment
+runs only on compensated builds (`vdef.zmotionApplied`); every output
+carries `aligned`, and loaders gate on `vdef.pairAligned`.
+`EAGER_2022` cannot be rebuilt and duplicates GL1 (`vdef.surveyLines`).
+
 **The estimator, replaced 2026-08-05.** It is now the normalised
 cross-correlation of the two slices' trace-averaged POWER profiles in a
 surface window, FFT-upsampled 32x. The previous cross-spectrum group
@@ -97,7 +109,7 @@ at all - depth-decaying white noise, whose trace-averaged profile has no
 bin-scale structure - and on the real products it ran 1.2-1.3x the true
 residual on the uncoregistered products and returned up to 8.5 ns of pure
 noise on the coregistered ones, where the truth is ~0, all at quality
-0.965-1.000. Since coalignment is applied to every pair, that noise was
+0.965-1.000. Since coalignment was then applied to every pair, that noise was
 corrupting the *correctly* calibrated products. The envelope correlation
 reproduces the truth at ratio 0.97-1.07 on the former and stays within
 +/-0.9 ns of zero on the latter. The synthetic now carries a realistic
@@ -353,6 +365,9 @@ reported strain rates and velocities are converted to per-year.
   the fix for the tide-proportional artefact; see 'Fixed: the
   tide-proportional artefact' above for the mechanism and the estimator
   rationale, and the retraction section for why it must be per column.
+- `vdef.zmotionApplied`, `vdef.pairAligned` - whether a product was
+  built with the z-motion compensation, and whether a vvel pair output
+  is aligned and therefore usable; the gate every loader applies.
 - `vdef.multilook` - boxcar interferogram and coherence from a coregistered
   SLC pair. Cross product per pixel, averaged after - never the reverse.
 - `vdef.differentialRange` - interferogram phase to `dtau(twtt, x)`,
@@ -422,7 +437,14 @@ reported strain rates and velocities are converted to per-year.
   are one regressor and the controlled estimate is a ridge, not a
   number. A self-test injects a known response as a phase rotation and
   requires it back as an exact shift, which is what pins the phase
-  sign. Driver: `scripts/diagnostics/tidal_stack.m`, figure:
+  sign. It also co-estimates the secular trend and, with a quadrature
+  tide regressor, the in-phase and quarter-period components
+  (`scripts/diagnostics/tidal_phase.m` reads the common lag); its error
+  bar is the delete-one-PASS jackknife, because pairs share passes. The
+  driver masks each block below its ice base (`vdef.trackBase`) and
+  takes an optional deeper phase reference (`ref_depth`), saved with the
+  output. The options and their rationale are in the two headers.
+  Driver: `scripts/diagnostics/tidal_stack.m`, figure:
   `scripts/figures/tidal_stack_figure.m`. Unit test:
   `scripts/test_tidal_stack.m`.
 - `vdef.beamFlexure` - the grounding zone as an Euler-Bernoulli beam of
@@ -544,6 +566,17 @@ sigmas imply: residuals smaller than the sigmas are, on these lines, the
 signature of errors shared by every block, and scaling the interval by
 them made it two to three times narrower than the pass jackknife
 (`test_beam_flexure.m`, checks 14 and 15).
+
+The strain rows can instead come from the coherent tidal stack
+(`elastic_modulus.m`, `strain_source = 'stack'`), with the lever
+integrated from the stack's saved phase reference (`top_depth`) and,
+for the shallow reference, a line-uniform offset (`fit_offset`). The
+driver also runs a STRAIN-ONLY test, with no deflection rows and the
+far-field amplitude fixed (`opts.amplitude`), combined across lines. It
+comes out soft (about 0.5 GPa at nu = 0.3, against 3.6 from the GPS) and
+matches at nu = 0.5. This is a reported result, not a defect. The
+options are documented in `vdef.invertElasticModulus` and the driver
+header.
 
 LOCAL `E*(x)` is available through the inverter's `E_patch` mode (the
 searched modulus applies only inside a window, via the exact
