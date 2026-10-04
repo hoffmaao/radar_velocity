@@ -76,7 +76,8 @@ function OUT = tidal_stack(opts)
 %   another hour; b = 0 within error is the clean outcome.
 %
 %   opts.ref_depth moves the phase reference from the default 50 ns (~5 m)
-%   to that depth [m]; the response is then relative to that level.
+%   to that depth [m]; the response is then relative to that level. Each
+%   OUT element records it as .ref_depth (NaN for the 50 ns default).
 %
 %   Run on the server:
 %     /opt/sw/matlab/2024b/bin/matlab -batch \
@@ -105,7 +106,8 @@ P = vdef.firnColumn(vdef.defaultParams());
 OUT = struct('name', {}, 'x_sea', {}, 'along', {}, 'lat', {}, 'lon', {}, 'zsel', {}, 'base', {}, 'base_col', {}, 'a', {}, 'a_sd', {}, ...
   'a_sd_boot', {}, 'F', {}, 'a_t', {}, 'a_t_sd', {}, 'v_t', {}, 'F_t', {}, 'r_tt', {}, 'a2', {}, 'g2', {}, ...
   'a_q', {}, 'b_q', {}, 'v_q', {}, 'F_q', {}, 'a_q_sd', {}, 'b_q_sd', {}, 'r_qt', {}, ...
-  'F2', {}, 'rcol', {}, 'c_unw', {}, 'npair', {}, 'pairs', {}, 'dt_days', {}, 'kz', {}, 'inj_err', {}, 'main_idx', {});
+  'F2', {}, 'rcol', {}, 'c_unw', {}, 'npair', {}, 'pairs', {}, 'dt_days', {}, 'kz', {}, 'inj_err', {}, 'main_idx', {}, ...
+  'ref_depth', {});
 for n = 1:numel(opts.products)
   pn = opts.products{n}; nm = strrep(pn, 'EAGER_2022_', '');
   fn_mp = fullfile(opts.mp_dir, sprintf('%s_multipass03.mat', pn));
@@ -137,8 +139,9 @@ for n = 1:numel(opts.products)
   % (50 ns, ~5 m of firn). opts.ref_depth [m] moves it down the column - the
   % test of whether a depth-constant response is the column moving or the
   % reference being contaminated by the surface return's tail
-  ref_off = o.ref_twtt_offset;
+  ref_off = o.ref_twtt_offset; ref_depth = NaN;
   if ~isempty(opts.ref_depth)
+    ref_depth = opts.ref_depth;
     tsurf = Time - mean(Surface, 'omitnan');
     g = isfinite(depth) & tsurf >= 0;                 % depth is defined from the surface down
     [du, iu] = unique(depth(g)); tg = tsurf(g);
@@ -258,7 +261,8 @@ for n = 1:numel(opts.products)
     'a_t', R.a_t, 'a_t_sd', R.a_t_sd, 'v_t', R.v_t, 'F_t', R.F_t, 'r_tt', R.r_tt, ...
     'a_q', R.a_q, 'b_q', R.b_q, 'v_q', R.v_q, 'F_q', R.F_q, 'a_q_sd', R.a_q_sd, 'b_q_sd', R.b_q_sd, 'r_qt', R.r_qt, ...
     'a2', R.a2, 'g2', R.g2, 'F2', R.F2, 'rcol', R.rcol, 'c_unw', c_unw, 'npair', npair, ...
-    'pairs', pairs, 'dt_days', DTD, 'kz', kz, 'inj_err', R.inj_err, 'main_idx', main_idx); %#ok<AGROW>
+    'pairs', pairs, 'dt_days', DTD, 'kz', kz, 'inj_err', R.inj_err, 'main_idx', main_idx, ...
+    'ref_depth', ref_depth); %#ok<AGROW>
 end
 fprintf(['\na_stack: coherent 1-D scan on the tide alone. sd_jk: delete-one-PASS jackknife, the error bar\n' ...
          'to quote (a pass''s own error enters every pair it is in); sd_bt: the pair bootstrap, which\n' ...

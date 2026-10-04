@@ -91,10 +91,11 @@ function OUT = elastic_modulus(opts)
 %                 tidal_stack.m) on the surface-coupled rebuild, read from
 %                 .stack_file in vdef.figureDir - the in-phase response of
 %                 the phase-lag fit (a_q, with its pass jackknife a_q_sd)
-%                 at .stack_depth (100 m). Its phase reference is
-%                 .stack_ref m below the surface (5: the chain's 50 ns; 60
-%                 for tidal_stack_nozc_ref60.mat), so the lever is
-%                 integrated from there, and with .stack_offset (default
+%                 at .stack_depth (100 m). Its phase reference is read
+%                 from the stack file (.ref_depth; NaN, the chain's 50 ns,
+%                 is taken as 5 m; 60 for tidal_stack_nozc_ref60.mat), so
+%                 the lever is integrated from there. .stack_ref [m], when
+%                 given, must match it, and with .stack_offset (default
 %                 true) a line-uniform constant joins the strain rows to
 %                 absorb the shallow-firn response a 5 m reference carries.
 %                 The jackknife below then varies a(x) only: the stack's
@@ -157,7 +158,7 @@ if ~isfield(opts,'strain_source') || isempty(opts.strain_source), opts.strain_so
 assert(any(strcmp(opts.strain_source, {'network','stack'})), 'opts.strain_source must be ''network'' or ''stack''');
 if ~isfield(opts,'stack_file') || isempty(opts.stack_file), opts.stack_file = 'tidal_stack_nozc.mat'; end
 if ~isfield(opts,'stack_depth') || isempty(opts.stack_depth), opts.stack_depth = 100; end
-if ~isfield(opts,'stack_ref') || isempty(opts.stack_ref), opts.stack_ref = 5; end
+if ~isfield(opts,'stack_ref'), opts.stack_ref = []; end
 if ~isfield(opts,'stack_offset') || isempty(opts.stack_offset), opts.stack_offset = true; end
 
 MIN_PASS = 5;                  % passes needed to regress a block on the tide
@@ -167,8 +168,8 @@ X0_GRID  = -6000:250:1000;     % clamp position, seaward coordinates
 % via R.strain_spec: the network admittance is read at 100 m from the
 % surface; the stack from its own phase reference down to stack_depth
 if strcmp(opts.strain_source, 'stack')
-  SSPEC = struct('ref_depth', opts.stack_depth, 'top_depth', opts.stack_ref, 'fit_offset', opts.stack_offset, ...
-    'avg_width', []);                  % set from the stack's own blocks when it is loaded
+  SSPEC = struct('ref_depth', opts.stack_depth, 'top_depth', [], 'fit_offset', opts.stack_offset, ...
+    'avg_width', []);                  % top_depth and avg_width set from the stack when it is loaded
 else
   SSPEC = struct('ref_depth', 100, 'top_depth', 0, 'fit_offset', false, 'avg_width', []);
 end
@@ -253,6 +254,12 @@ if strcmp(opts.strain_source, 'stack')
   assert(isfield(ST, 'a_q'), '%s has no phase-lag fit (a_q): rerun tidal_stack', fs);
   % the stack has its own blocks (500 m), whatever block a(x) is built on
   SSPEC.avg_width = median(diff(sort(ST(1).along(:))));
+  assert(isfield(ST, 'ref_depth'), '%s does not record its phase reference (ref_depth): rerun tidal_stack', fs);
+  zr = ST(1).ref_depth;                % one run, one reference for every product
+  if isnan(zr), zr = 5; end
+  assert(isempty(opts.stack_ref) || opts.stack_ref == zr, ...
+    'opts.stack_ref %g m does not match the %g m phase reference recorded in %s', opts.stack_ref, zr, fs);
+  SSPEC.top_depth = zr;
   fprintf('\n=== englacial strain from the coherent stack (%s), %d m to %d m ===\n', ...
     opts.stack_file, SSPEC.top_depth, SSPEC.ref_depth);
   for i = 1:numel(L)
@@ -434,7 +441,8 @@ for c = 1:nC
     H_CASES{c,1}, numel(e), min(e)/1e9, max(e)/1e9, mean(e)/1e9, ...
     std(e)/1e9, 100*std(e)/mean(e));
 end
-eall = Efit(isfinite(Efit));
+eall = Efit(~cellfun(@ischar, H_CASES(:,3)), :);
+eall = eall(isfinite(eall));
 if ~isempty(eall)
   fprintf(['every line and thickness case: %.2f to %.2f GPa, mean %.2f, ' ...
            'sd %.2f\n'], min(eall)/1e9, max(eall)/1e9, mean(eall)/1e9, std(eall)/1e9);
