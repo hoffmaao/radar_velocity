@@ -110,8 +110,17 @@ end
 % misalignment leaks into the inferred strain (measured at roughly 57 mm
 % of apparent column displacement per metre of tide before this fix).
 % Leave enabled except when deliberately reproducing the artefact.
+%
+% 'auto' (the default) applies it only to products built WITH that
+% compensation (vdef.zmotionApplied). A product built with
+% param.multipass.zmotion_comp_en = false is aligned at the product level
+% to a few hundredths of a ns, and on those products coalignPair's
+% surface-envelope estimate carries a bias of ~0.25 ns relative to the
+% internal layers (measured on GL1 by injecting known shifts), so applying
+% it would MISalign pairs that are already aligned. true/false force it on
+% or off regardless of the build.
 if ~isfield(param.vvel,'coalign_en') || isempty(param.vvel.coalign_en)
-  param.vvel.coalign_en = true;
+  param.vvel.coalign_en = 'auto';
 end
 
 % coalign_max_lag: credibility bound on the measured shift [bins]. This is

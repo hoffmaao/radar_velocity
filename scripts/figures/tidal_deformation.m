@@ -54,12 +54,14 @@
 %
 %   Outputs one 4-panel figure per line. The cross-line summary figure is
 %   deliberately retired (see the note at the out_dir assignment below);
-%   admittance_map.m carries the map view.
+%   tidal_response_map.m carries the map view.
 %
 %   Run on the server, where the products live:
 %     /opt/sw/matlab/2024b/bin/matlab -batch "run('.../tidal_deformation.m')"
 
 addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
+addpath(fileparts(mfilename('fullpath')));            % grl_figure
+addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))),'diagnostics'));  % pass_tide
 
 % VVEL_SUFFIX selects which processing run to read. The default is '_v3',
 % the current per-column-coaligned main-pairing build.
@@ -99,13 +101,12 @@ end
 vvel_dir = ['/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_vvel' VVEL_SUFFIX];
 fprintf('reading %s\n', vvel_dir);
 mp_dir   = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
-out_dir  = '/kucresis/scratch/hoffmana_sta/vvel/figures';
+out_dir  = vdef.figureDir();
 % gis_dir is unused now that this script emits no map: the REMA hillshade
 % and grounding-line helpers went with the cross-line summary figure.
-% admittance_map.m carries the map view.
+% tidal_response_map.m carries the map view.
 
-PASS_NAMES = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2', ...
-              'EAGER_2022_GL3','EAGER_2022_GL4'};
+PASS_NAMES = vdef.surveyLines();   % EAGER_2022 duplicates GL1
 REF_DEPTHS    = [100 200];  % [m] column depths over which strain is measured
 MAIN_DEPTH    = 2;          % which of those drives the per-line panels (b), (c)
 SUMMARY_DEPTH = 1;          % which drives the printed hinge table (the robust one)
@@ -182,7 +183,7 @@ end
 % The cross-line summary FIGURE is deliberately not emitted. It plotted the
 % partial correlation of strain with tide, per line and in map view, which
 % under correct (per-column) processing has no along-track structure and so
-% says less than admittance_map.m says with the physical quantity (mm per
+% says less than tidal_response_map.m says with the physical quantity (mm per
 % metre of tide, with the GPS-curvature prediction and the located ApRES
 % site). Two near-identical maps of the same relationship, on different
 % metrics and different builds, is exactly what let a figure from a
@@ -263,7 +264,13 @@ sec_idx = sec_idx(ord);
 ref_idx = ref_idx(ord);
 strain  = strain(:,ord,:);
 main_pass = ref_idx(1);
-tide   = pass_elev(sec_idx) - pass_elev(main_pass);
+% The tide is CATS2008 at each pass mid-time, with the pass gate, from the
+% same helper the flexure inversion uses (scripts/diagnostics/pass_tide.m)
+% - NOT the line-mean GPS height, which carries a per-pass height error
+% that attenuated the admittance by 15-25% and let a 1.1 m bad pass
+% through (see vdef.surfaceAdmittance).
+[ct, ~, tinfo] = pass_tide(pass_name, mp_dir);
+tide = ct(sec_idx) - cats2008_tide(tinfo.tmid(main_pass));
 t_days = (t_sec - min(t_sec))/86400;
 
 Nblk = size(strain,1);
@@ -343,19 +350,19 @@ ink = PAL.ink; ink_soft = PAL.ink_soft;
 depth_col = {PAL.cat(1,:), PAL.cat(2,:)};
 depth_mk  = {'o','s'};
 
-h = figure('Visible','off','Position',[100 100 950 1180],'Color','w');
+[h, GRL] = grl_figure(140, 173.9);
 axstyle = {'GridAlpha',0.15,'XColor',ink,'YColor',ink,'Box','off'};
 
-ax1 = axes('parent',h,'Position',[0.10 0.775 0.73 0.175]);
+ax1 = axes('parent',h,'Position',[0.12 0.815 0.71 0.140]);
 plot(ax1, R.t_days, R.tide, '-', 'Color', ink_soft, 'LineWidth', 1.5); hold(ax1,'on');
 plot(ax1, R.t_days, R.tide, 'o', 'MarkerSize', 7, 'MarkerFaceColor', ink, ...
   'MarkerEdgeColor','w','LineWidth',1);
 grid(ax1,'on'); set(ax1, axstyle{:});
-ylabel(ax1,'Platform elevation (m)','Color',ink);
-title(ax1, sprintf('%s  -  tide from pass GPS elevation, relative to the main pass', ...
+ylabel(ax1,'CATS2008 tide (m)','Color',ink);
+title(ax1, sprintf('%s  -  CATS2008 tide relative to the main pass', ...
   R.pass_name), 'Interpreter','none','Color',ink);
 
-ax2 = axes('parent',h,'Position',[0.10 0.535 0.73 0.175]);
+ax2 = axes('parent',h,'Position',[0.12 0.565 0.71 0.140]);
 hold(ax2,'on');
 for b = 1:R.Nblk
   if R.nobs(b,MAIN_DEPTH) < 5, continue; end
@@ -366,8 +373,8 @@ grid(ax2,'on'); set(ax2, axstyle{:});
 ylabel(ax2, sprintf('Strain 0-%.0f m (\\mu\\epsilon)', REF_DEPTHS(MAIN_DEPTH)),'Color',ink);
 xlabel(ax2, sprintf('Days from %s UTC', ...
   datestr(epoch_to_datenum(min(R.t_sec)),'yyyy-mm-dd HH:MM')), 'Color', ink);
-title(ax2,'Vertical strain of the column, relative to the main pass','Color',ink);
-cb = colorbar(ax2,'Position',[0.855 0.535 0.020 0.175]);
+title(ax2,{'Vertical strain of the column','relative to the main pass'},'Color',ink,'FontWeight','normal');
+cb = colorbar(ax2,'Position',[0.855 0.565 0.020 0.140]);
 colormap(ax2, cmap); caxis(ax2, [R.along(1) R.along(end)]/1e3);
 set(get(cb,'ylabel'),'string','Along track (km)','Color',ink);
 set(cb,'XColor',ink,'YColor',ink);
@@ -375,7 +382,7 @@ set(cb,'XColor',ink,'YColor',ink);
 % Detrended: the secular term b*t of the joint fit is removed from each
 % block's series before plotting, so the line drawn IS the admittance and
 % the scatter around it is what the fit actually sees (see header)
-ax3 = axes('parent',h,'Position',[0.10 0.295 0.73 0.175]);
+ax3 = axes('parent',h,'Position',[0.12 0.310 0.71 0.140]);
 hold(ax3,'on');
 for b = 1:R.Nblk
   if ~isfinite(R.adm(b,MAIN_DEPTH)), continue; end
@@ -389,11 +396,11 @@ for b = 1:R.Nblk
   plot(ax3, xf, 1e6*(R.adm(b,MAIN_DEPTH)*xf + b0), '-', 'Color', cmap(b,:), 'LineWidth',1.5);
 end
 grid(ax3,'on'); set(ax3, axstyle{:});
-xlabel(ax3,'Platform elevation relative to main pass (m)','Color',ink);
-ylabel(ax3, sprintf('Detrended strain 0-%.0f m (\\mu\\epsilon)', REF_DEPTHS(MAIN_DEPTH)),'Color',ink);
-title(ax3,'Detrended strain against tide - the fitted lines are the admittance','Color',ink);
+xlabel(ax3,'CATS2008 tide relative to main pass (m)','Color',ink);
+ylabel(ax3, 'Detrended strain (\mu\epsilon)','Color',ink);
+title(ax3,{'Detrended strain against tide','fitted lines: the admittance'},'Color',ink,'FontWeight','normal');
 
-ax4 = axes('parent',h,'Position',[0.10 0.055 0.73 0.175]);
+ax4 = axes('parent',h,'Position',[0.12 0.055 0.71 0.140]);
 hold(ax4,'on');
 plot(ax4, [R.along(1) R.along(end)]/1e3, [0 0], '-', 'Color', [0.75 0.75 0.75], 'LineWidth',1);
 hleg = []; lbl = {};
@@ -408,14 +415,14 @@ for j = 1:numel(REF_DEPTHS)
 end
 grid(ax4,'on'); set(ax4, axstyle{:}); ylim(ax4,[-1 1]);
 xlabel(ax4,'Along track (km)','Color',ink);
-ylabel(ax4,'Partial corr. of strain with tide','Color',ink);
-title(ax4, sprintf('Tidal response along the line, trend removed (hollow: fewer than %d pairs)', MIN_OBS), ...
+ylabel(ax4,'Partial corr. with tide','Color',ink);
+title(ax4, {'Tidal response along the line, trend removed', sprintf('(hollow: fewer than %d pairs)', MIN_OBS)}, 'FontWeight','normal', ...
   'Color', ink);
 lg = legend(ax4, hleg, lbl, 'Location','SouthWest');
 set(lg,'TextColor',ink,'Box','off');
 
 out_fn = fullfile(out_dir, sprintf('%s_tidal_deformation%s.png', R.pass_name, R.suffix));
-print(h, out_fn, '-dpng', '-r120');
+print(h, out_fn, '-dpng', sprintf('-r%d', GRL.dpi));
 close(h);
 fprintf('Wrote %s\n', out_fn);
 end

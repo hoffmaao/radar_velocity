@@ -225,7 +225,7 @@ for q = 1:numel(f)
   o = load(fullfile(dirn, f(q).name));
   % a pair whose coalignment was rejected is NOT usable: it still carries
   % the multipass misalignment, which leaks into dtau at about 6%
-  if isfield(o,'coalign_applied') && ~o.coalign_applied, nskip = nskip+1; continue; end
+  if ~vdef.pairAligned(o), nskip = nskip+1; continue; end
   if max(abs(o.baseline_y)) > MAX_BASELINE, nskip = nskip+1; continue; end
   Nblk = numel(o.S1); sv = nan(Nblk,1);
   for b = 1:Nblk

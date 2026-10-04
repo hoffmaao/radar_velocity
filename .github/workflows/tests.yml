@@ -69,6 +69,16 @@ jobs:
         run: |
           octave --no-gui --eval "try, test_invert_network; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
 
+      - name: Surface tidal admittance (external tide, pass gate)
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, test_surface_admittance; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
+      - name: Coherent tidal stack (all-pairs matched filter)
+        working-directory: scripts
+        run: |
+          octave --no-gui --eval "try, test_tidal_stack; catch err, fprintf('FAILED: %s\n', err.message); exit(1); end; exit(0);"
+
       - name: Elastic beam flexure (forward and modulus inversion)
         working-directory: scripts
         run: |

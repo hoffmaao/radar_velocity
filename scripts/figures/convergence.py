@@ -67,6 +67,7 @@ from datetime import datetime, timezone
 
 import matplotlib
 matplotlib.use("Agg")
+import grl_style
 import matplotlib.pyplot as plt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -81,7 +82,7 @@ YELLOW = "#eda100"; MAGENTA = "#e87ba4"
 INK = "#000000"; INK_SOFT = "#737373"; BAND = "#e6e6e2"
 
 # ---- radar numbers AT THE ApRES SITE, cited from diagnostics/far_end_check.m
-# GA04 projects to 4.70 km along track, 0.07 km off the line (admittance_map.m
+# GA04 projects to 4.70 km along track, 0.07 km off the line (tidal_response_map.m
 # apres_along). These are the per-line blocks nearest that position - NOT line
 # means, which is the whole point: the line mean of a profile running -3.7 to
 # +2.5 is not the quantity a point measurement should be compared with.
@@ -178,6 +179,7 @@ def apres_regression(site="GA04", cats=None):
 
 
 def main():
+    grl_style.apply()
     # every site with pair products; GA04 is the site of record (stable bed
     # pick), the others are context. Identity is carried by colour and told
     # in the caption - the figure itself carries no in-plot text beyond the
@@ -215,7 +217,7 @@ def main():
     se_mm = 1e3 * se * 100
 
     fig, (ax1, ax2) = plt.subplots(
-        1, 2, figsize=(13.2, 5.4), dpi=150,
+        1, 2, figsize=grl_style.figsize(grl_style.TWO_COL_MM, 0.41),
         gridspec_kw={"width_ratios": [1.0, 1.05], "wspace": 0.60})
     fig.patch.set_facecolor("white")
 
@@ -276,7 +278,7 @@ def main():
                  mec=c if hollow else "white", mew=1.4, color=c, zorder=4)
 
     ax2.set_yticks([r[0] for r in rows])
-    ax2.set_yticklabels([r[1] for r in rows], fontsize=9.5, color=INK)
+    ax2.set_yticklabels([r[1] for r in rows], fontsize=grl_style.BASE_PT, color=INK)
     ax2.invert_yaxis()
     ax2.set_ylim(rows[-1][0] + 0.9, -0.8)
     ax2.set_xlim(-4.2, 7.8)

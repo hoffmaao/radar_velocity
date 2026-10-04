@@ -40,7 +40,7 @@ vvel_dir = ['/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_vv
 addpath(fileparts(fileparts(fileparts(mfilename('fullpath')))));   % +vdef
 c = 299792458; ALPHA = 1.03; BLOCK = 200; REF_DEPTH = 100; MAX_BASELINE = 10;
 
-names = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2','EAGER_2022_GL3','EAGER_2022_GL4'};
+names = vdef.surveyLines();   % four lines; EAGER_2022 duplicates GL1
 
 fprintf('%-16s %7s %11s %11s %13s %11s\n', 'product','pairs', ...
   'medRMS[ns]','max|g|[ns/m]','corr(adm,g)','p');

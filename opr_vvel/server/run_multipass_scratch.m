@@ -27,6 +27,34 @@
 %
 %   Rerun-safe: exits early if the output multipass03.mat already exists
 %   in scratch. Define force_rerun=true before running to overwrite.
+%
+%   BUILD WITHOUT Z-MOTION COMPENSATION (zmotion_off = true). The radar
+%   rides on the ice, so the antenna-to-surface range is fixed and ref_z is
+%   the ice's own motion - on this floating shelf, the tide (pass.surface is
+%   constant with tide while ref_z swings by ~1 m). The standard build
+%   compensates ref_z as if it were a range change, which misaligns every
+%   pass in proportion to its tide; coalignment then has to undo that
+%   downstream and whatever it misses stays tide-proportional. This build
+%   skips the compensation at the source (multipass param
+%   zmotion_comp_en = false) and writes to CSARP_multipass_nozc, leaving the
+%   standard products untouched.
+%
+%   The frozen coregistration_time_shift and equalization vectors below
+%   were estimated WITH the compensation, so they are not reused: the
+%   calibration is re-derived in three stages, one fresh session each,
+%   with the vectors passed between stages through
+%   <product>_calib.mat rather than pasted by hand:
+%     stage='coreg'     shift estimate (multipass coregistration
+%                       estimation, coherent cross-correlation over the
+%                       surface and ice column)
+%     stage='equalize'  comp_mode 1, per-pass complex equalization: amplitude
+%                       from ice-column POWER (not the toolbox's mean
+%                       interferogram, which folds in coherence), phase
+%                       from the toolbox's mean interferometric phase
+%     stage='product'   comp_mode 3, the product the vvel chain reads
+%   e.g.
+%     matlab -batch "product='EAGER_2022_GL3'; zmotion_off=true; stage='coreg'; run('...')"
+%   run_multipass_nozc.sh runs all three for every product.
 
 global gRadar;
 
@@ -49,9 +77,18 @@ if ~exist('force_rerun','var'), force_rerun = false; end
 % master itself: the resampling grid, the surface reference, and any
 % master-specific residual.
 if ~exist('master_override','var'), master_override = []; end
+if ~exist('zmotion_off','var') || isempty(zmotion_off), zmotion_off = false; end
+if ~exist('stage','var') || isempty(stage), stage = 'product'; end
+stage = char(stage);
+assert(ismember(stage, {'coreg','equalize','product'}), 'Unknown stage: %s', stage);
+assert(zmotion_off || strcmp(stage, 'product'), ...
+  'Calibration stages exist only for the zmotion_off build; the standard build uses the frozen vectors.');
 
 scratch_dir = '/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_multipass';
 archive_dir = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
+if zmotion_off
+  scratch_dir = '/kucresis/scratch/hoffmana_sta/vvel/2022_Antarctica_Ground/CSARP_multipass_nozc';
+end
 
 if ~exist(scratch_dir,'dir')
   mkdir(scratch_dir);
@@ -79,7 +116,16 @@ if ~exist(in_fn,'file')
 end
 
 out_fn = fullfile(scratch_dir, [product_out '_multipass03.mat']);
-if exist(out_fn,'file') && ~force_rerun
+calib_fn = fullfile(scratch_dir, [product_out '_calib.mat']);
+if zmotion_off && ~strcmp(stage, 'product')
+  done_field = struct('coreg', 'coregistration_time_shift', 'equalize', 'equalization');
+  if exist(calib_fn,'file') && ~force_rerun && ...
+      ~isempty(whos('-file', calib_fn, done_field.(stage)))
+    fprintf('[SKIP] %s already holds %s; define force_rerun=true to redo\n', ...
+      calib_fn, done_field.(stage));
+    return;
+  end
+elseif exist(out_fn,'file') && ~force_rerun
   fprintf('[SKIP] %s exists; define force_rerun=true to overwrite\n', out_fn);
   return;
 end
@@ -155,8 +201,107 @@ if ~isempty(master_override)
   param.multipass.master_idx = master_override;
 end
 
+%% Build without z-motion compensation: re-derive the calibration
+if zmotion_off
+  param.multipass.zmotion_comp_en = false;
+  Np = numel(param.multipass.pass_en_mask);
+  CAL = struct();
+  if exist(calib_fn,'file'), CAL = load(calib_fn); end
+  switch stage
+    case 'coreg'
+      % Search window: from just above the surface down through the
+      % coherent ice column (the column ends at ~3.5 us, the base of the
+      % floating shelf; 3.0 us stays inside it). Located on the archived
+      % product's main pass, whose time axis the coregistered data share.
+      A = load(fullfile(archive_dir, [product '_multipass03.mat']), 'pass');
+      mp_ = A.pass(param.multipass.baseline_master_idx);
+      dt_ = mp_.time(2) - mp_.time(1);
+      sb_ = round(interp1(mp_.time, 1:numel(mp_.time), median(mp_.surface, 'omitnan')));
+      param.multipass.rbins = max(1, sb_-20) : min(numel(mp_.time), sb_ + round(3.0e-6/dt_));
+      clear A mp_
+      param.multipass.coregistration_time_shift = zeros(1, Np);
+      param.multipass.equalization = ones(1, Np);
+      param.multipass.coregistration_estimation_enable = true;
+      % wider than the -2:0.05:2 the compensated build needed: with no
+      % compensation the expected shifts are small, but a shift at the
+      % edge of the search is a failed estimate, so leave margin to see it
+      param.multipass.coregistration_estimation_range = -3:0.05:3;
+    case 'equalize'
+      assert(isfield(CAL, 'coregistration_time_shift'), 'Run stage=''coreg'' first (%s)', calib_fn);
+      param.multipass.comp_mode = 1;
+      param.multipass.coregistration_time_shift = CAL.coregistration_time_shift;
+      param.multipass.equalization = ones(1, Np);
+    case 'product'
+      assert(isfield(CAL, 'coregistration_time_shift') && isfield(CAL, 'equalization'), ...
+        'Run stages coreg and equalize first (%s)', calib_fn);
+      param.multipass.coregistration_time_shift = CAL.coregistration_time_shift;
+      param.multipass.equalization = CAL.equalization;
+  end
+  fprintf('Z-MOTION COMPENSATION OFF, stage %s -> %s\n', stage, scratch_dir);
+end
+
 %% Run (mirrors the automated section of run_multipass_EAGER.m)
 [~, param.multipass.pass_name] = fileparts(param.multipass.fn);
 param_override = gRadar;
 
 multipass.multipass
+
+%% Keep what a calibration stage estimated (multipass is a script, so its
+%% results are still in this workspace)
+if zmotion_off && strcmp(stage, 'coreg')
+  rng_ = param.multipass.coregistration_estimation_range;
+  en_ = find(param.multipass.pass_en_mask);
+  shift = zeros(1, Np); shift(en_) = coregistration_time_shift_est;
+  at_edge = en_(abs(coregistration_time_shift_est) >= max(abs(rng_)) - 1e-9);
+  if ~isempty(at_edge)
+    error('Shift estimate at the search edge for pass(es) %s; widen coregistration_estimation_range', ...
+      mat2str(at_edge));
+  end
+  CAL.coregistration_time_shift = shift;
+  CAL.coreg_rbins = param.multipass.rbins;
+  CAL.coreg_range = rng_;
+  CAL.coreg_xcorr_sum = xcorr_sum;
+  save(calib_fn, '-struct', 'CAL');
+  fprintf('coregistration_time_shift (bins): %s\nsaved %s\n', mat2str(shift, 3), calib_fn);
+elseif zmotion_off && strcmp(stage, 'equalize')
+  % EQUALIZATION = EQUAL POWER PER PASS, PLUS A CONSTANT PHASE.
+  % The toolbox's own estimate, new_equalization = mean(s_k .* conj(s_main))
+  % over every bin, has amplitude gamma_k * sqrt(P_k * P_main): it is the
+  % pass's gain TIMES its coherence with the main pass. Dividing by it
+  % therefore boosts a decorrelated pass by 1/gamma_k - GL1's 20221209_01
+  % came out at -11.2 dB, i.e. 3.6x in amplitude - and every downstream
+  % stage that weights by interferogram amplitude (vdef.tidalStack weights
+  % each pair by |I|) then gives that pass's pairs MORE weight, the
+  % opposite of what its coherence warrants. So the amplitude here is the
+  % pass's mean POWER over the ice column (10 bins below the surface down
+  % to the end of the coreg window, ~3 us, where the interferograms are
+  % formed), relative to the mean over enabled passes in dB, and the phase
+  % is the toolbox's mean interferometric phase, which the bright surface
+  % dominates. `data` is this mode-1 run's coregistered, UNequalized data,
+  % still in the workspace because multipass is a script.
+  en_ = find(param.multipass.pass_en_mask);
+  rows_ = CAL.coreg_rbins; sb_ = rows_(1) + 20;           % the coreg window starts 20 bins above the surface
+  col_rows_ = (sb_ + 10) : rows_(end);
+  srf_rows_ = (sb_ - 3) : (sb_ + 3);
+  Pcol_ = nan(1, Np); Psrf_ = nan(1, Np);
+  for q_ = 1:numel(en_)
+    s_ = data(col_rows_, :, q_); Pcol_(en_(q_)) = mean(abs(s_(isfinite(s_))).^2);
+    s_ = data(srf_rows_, :, q_); Psrf_(en_(q_)) = mean(abs(s_(isfinite(s_))).^2);
+  end
+  rel_ = @(v) v - mean(v(en_));
+  gain_dB_ = rel_(10*log10(Pcol_));
+  tool_dB_ = rel_(db(new_equalization, 'voltage'));
+  CAL.equalization = 10.^(gain_dB_/20) .* exp(1i*angle(new_equalization));
+  CAL.equalization_gain_dB = gain_dB_;                     % ice-column power, applied
+  CAL.equalization_surface_dB = rel_(10*log10(Psrf_));     % surface power, for the record
+  CAL.equalization_toolbox_dB = tool_dB_;                  % gain x coherence, for the record
+  CAL.equalization_phase_deg = angle(new_equalization)*180/pi;
+  CAL.equalization_rows = col_rows_;
+  save(calib_fn, '-struct', 'CAL');
+  fprintf(['equalization gain dB (ice column, applied): %s\n' ...
+           'equalization surface dB (record):           %s\n' ...
+           'equalization toolbox dB (gain x coherence): %s\n' ...
+           'equalization deg:                           %s\nsaved %s\n'], ...
+    mat2str(gain_dB_, 3), mat2str(CAL.equalization_surface_dB, 3), mat2str(tool_dB_, 3), ...
+    mat2str(CAL.equalization_phase_deg, 4), calib_fn);
+end

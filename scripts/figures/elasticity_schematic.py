@@ -37,6 +37,7 @@ import os
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
+import grl_style
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, Polygon
 
@@ -90,10 +91,10 @@ def panel_a(ax):
                           (-1.6, -1.55)], closed=True, fc=OCEAN, ec="none"))
     ax.add_patch(Polygon([(-1.6, -3.05), (-0.35, -3.05), (-0.35, -1.5),
                           (-1.6, -1.15)], closed=True, fc=BED, ec="none"))
-    ax.text(-1.15, -2.45, "bed", fontsize=9, color=INK_SOFT)
+    ax.text(-1.15, -2.45, "bed", fontsize=8, color=INK_SOFT)
     # ocean label sits low and left of the load annotation, which occupies
     # the middle of the water column
-    ax.text(4.35, -2.9, "ocean", fontsize=9, color=INK_SOFT)
+    ax.text(4.35, -2.9, "ocean", fontsize=8, color=INK_SOFT)
 
     # the ice: top and bottom surfaces both carry the deflection
     top = surf_mean + amp * w
@@ -110,13 +111,13 @@ def panel_a(ax):
     ax.annotate("", xy=(3.5, top[np.argmin(abs(x - 3.5))]),
                 xytext=(3.5, bot[np.argmin(abs(x - 3.5))]),
                 arrowprops=dict(arrowstyle="<->", color=INK, lw=1.0))
-    ax.text(3.58, -0.75, r"$h(x)$", fontsize=11, color=INK)
+    ax.text(3.58, -0.75, r"$h(x)$", fontsize=9, color=INK)
 
     # the clamp
     ax.plot([0, 0], [-1.75, 0.30], "-", color=INK, lw=2.2)
-    ax.text(0.06, 0.40, "clamp: $w=0,\\ dw/dx=0$", fontsize=8.5, color=INK)
-    ax.text(-1.5, 0.40, "grounded", fontsize=9, color=INK_SOFT)
-    ax.text(3.05, 0.62, "free-floating:  $w = A_0$", fontsize=8.5, color=INK)
+    ax.text(0.06, 0.40, "clamp: $w=0,\\ dw/dx=0$", fontsize=8, color=INK)
+    ax.text(-1.5, 0.40, "grounded", fontsize=8, color=INK_SOFT)
+    ax.text(3.05, 0.62, "free-floating:  $w = A_0$", fontsize=8, color=INK)
 
     # tidal loading arrows on the underside
     for xa in np.arange(0.45, 4.8, 0.62):
@@ -125,19 +126,19 @@ def panel_a(ax):
                                      arrowstyle="-|>", mutation_scale=9,
                                      color=BLUE, lw=1.2))
     ax.text(1.5, -2.62, r"hydrostatic load  $\rho_w g\,[A_0 - w(x)]$",
-            fontsize=9.5, color=BLUE)
+            fontsize=8, color=BLUE)
 
     # the deflection itself
     ax.annotate("", xy=(2.15, top[np.argmin(abs(x - 2.15))]),
                 xytext=(2.15, surf_mean),
                 arrowprops=dict(arrowstyle="<->", color=ORANGE, lw=1.3))
-    ax.text(2.22, 0.16, r"$w(x)$", fontsize=11, color=ORANGE)
+    ax.text(2.22, 0.16, r"$w(x)$", fontsize=9, color=ORANGE)
     ax.plot(x, np.full_like(x, surf_mean), ":", color=INK_SOFT, lw=0.8)
 
     # flexural length
     ax.annotate("", xy=(0, -1.95), xytext=(lam / 1e3, -1.95),
                 arrowprops=dict(arrowstyle="<->", color=INK_SOFT, lw=1.0))
-    ax.text(lam / 2e3, -2.2, r"$\ell$", fontsize=10, color=INK_SOFT, ha="center")
+    ax.text(lam / 2e3, -2.2, r"$\ell$", fontsize=8, color=INK_SOFT, ha="center")
 
     ax.set_xlim(-1.6, 5.0); ax.set_ylim(-3.05, 0.95)
     ax.axis("off")
@@ -149,46 +150,46 @@ def panel_b(ax):
     dy = 1.02
     ax.text(0.0, y, r"$\dfrac{d^{2}}{dx^{2}}\!\left[D(x)\,"
                     r"\dfrac{d^{2}w}{dx^{2}}\right] = \rho_w g\,[A_0 - w(x)]$",
-            fontsize=12.5, color=INK, va="center")
-    ax.text(6.9, y, "beam on a\nhydrostatic foundation", fontsize=8.5,
+            fontsize=9.5, color=INK, va="center")
+    ax.text(6.9, y, "beam on a\nhydrostatic foundation", fontsize=8,
             color=INK_SOFT, va="center")
 
     y -= dy
     ax.text(0.0, y, r"$D(x) = \dfrac{E^{*}\,h(x)^{3}}{12\,(1-\nu^{2})}$",
-            fontsize=12.5, color=INK, va="center")
-    ax.text(6.9, y, "the modulus enters\nONLY through $D$", fontsize=8.5,
+            fontsize=9.5, color=INK, va="center")
+    ax.text(6.9, y, "the modulus enters\nONLY through $D$", fontsize=8,
             color=INK_SOFT, va="center")
-    ax.annotate("", xy=(1.42, y - 0.30), xytext=(1.42, y - 0.62),
+    ax.annotate("", xy=(1.42, y - 0.42), xytext=(1.42, y - 0.82),
                 arrowprops=dict(arrowstyle="-", color=ORANGE, lw=1.1))
-    ax.text(1.52, y - 0.55, r"so $E^{*}$ is never separable from $h^{3}$:"
+    ax.text(1.52, y - 0.80, r"so $E^{*}$ is never separable from $h^{3}$:"
                             r"  $\;d\ln E^{*} = -3\,d\ln h$",
-            fontsize=9, color=ORANGE, va="center")
+            fontsize=8, color=ORANGE, va="center")
 
     y -= 1.72
     ax.text(0.0, y, r"$\ell = \left(\dfrac{4D}{\rho_w g}\right)^{1/4}$",
-            fontsize=12.5, color=INK, va="center")
+            fontsize=9.5, color=INK, va="center")
     # mathtext will not parse \tfrac inside \left(...\right); x/\ell is
     # both legal and easier to read at this size
     ax.text(2.55, y, r"$\Rightarrow\ \ w(x) = A_0\left[1 - "
                      r"e^{-x/\ell}\left(\cos(x/\ell) + "
                      r"\sin(x/\ell)\right)\right]$",
-            fontsize=11.5, color=INK, va="center")
+            fontsize=9, color=INK, va="center")
     ax.text(6.9, y - 0.52, "flexural length: the SHAPE\ncarries $D$",
-            fontsize=8.5, color=INK_SOFT, va="center")
+            fontsize=8, color=INK_SOFT, va="center")
 
     y -= 1.30
     ax.text(0.0, y, r"$\varepsilon_{zz}(x,z) = \dfrac{\nu}{1-\nu}\,"
                     r"(z_n - z)\,\dfrac{d^{2}w}{dx^{2}}$",
-            fontsize=12.5, color=INK, va="center")
-    ax.text(6.9, y, "bending strain:\nthe CURVATURE", fontsize=8.5,
+            fontsize=9.5, color=INK, va="center")
+    ax.text(6.9, y, "bending strain:\nthe CURVATURE", fontsize=8,
             color=INK_SOFT, va="center")
 
     y -= dy
     ax.text(0.0, y, r"$\delta h(z_r) = \dfrac{\nu}{1-\nu}"
                     r"\left(z_n z_r - z_r^{2}/2\right)"
                     r"\dfrac{d^{2}w}{dx^{2}}$",
-            fontsize=12.5, color=INK, va="center")
-    ax.text(6.9, y, "what the radar\nmeasures, to $z_r$", fontsize=8.5,
+            fontsize=9.5, color=INK, va="center")
+    ax.text(6.9, y, "what the radar\nmeasures, to $z_r$", fontsize=8,
             color=INK_SOFT, va="center")
 
     ax.set_xlim(-0.15, 9.6); ax.set_ylim(-0.55, 5.0)
@@ -207,9 +208,9 @@ def panel_c(ax_w, ax_s):
     ax_w.plot(x, a_x, "-", color=ORANGE, lw=2.0)
     ax_w.axhline(0, color=INK_SOFT, lw=0.7, ls=":")
     ax_w.axvline(0, color=INK, lw=1.6)
-    ax_w.set_ylabel(r"$a(x)$  (line-mean units)", fontsize=9, color=ORANGE)
+    ax_w.set_ylabel("$a(x)$\n(line-mean units)", fontsize=8, color=ORANGE)
     ax_w.text(2.05, 0.30, "SHAPE only:\nthe normalisation\nremoves $A_0$",
-              fontsize=8.5, color=ORANGE)
+              fontsize=8, color=ORANGE)
     ax_w.set_xlim(-0.6, 4.6); ax_w.set_ylim(-0.12, 1.55)
     ax_w.set_xticklabels([])
     ax_w.tick_params(labelsize=8)
@@ -225,10 +226,10 @@ def panel_c(ax_w, ax_s):
     ax_s.plot(x, dh, "-", color=BLUE, lw=2.0)
     ax_s.axhline(0, color=INK_SOFT, lw=0.7, ls=":")
     ax_s.axvline(0, color=INK, lw=1.6)
-    ax_s.set_ylabel(r"$\delta h$  (mm per m tide)", fontsize=9, color=BLUE)
-    ax_s.set_xlabel("seaward distance (km)", fontsize=9)
+    ax_s.set_ylabel("$\\delta h$\n(mm per m tide)", fontsize=8, color=BLUE)
+    ax_s.set_xlabel("seaward distance (km)", fontsize=8)
     ax_s.text(2.05, 0.55 * np.nanmax(dh),
-              "ABSOLUTE:\namplitude $\\propto D^{-1/2}$", fontsize=8.5, color=BLUE)
+              "ABSOLUTE:\namplitude $\\propto D^{-1/2}$", fontsize=8, color=BLUE)
     ax_s.set_xlim(-0.6, 4.6)
     ax_s.tick_params(labelsize=8)
     for s in ("top", "right"):
@@ -266,19 +267,21 @@ def panel_d(ax):
     halo = dict(facecolor="white", edgecolor="none", alpha=0.82,
                 boxstyle="round,pad=0.28")
     ax.text(np.log10(E_STAR / 1e9) + 0.06, X0_STAR / 1e3 + 0.05,
-            r"$E^{*} = 3.9$ GPa", fontsize=9, color=INK, bbox=halo)
+            r"$E^{*} = 3.9$ GPa", fontsize=8, color=INK, bbox=halo)
     ax.text(-0.10, -1.34, "shape alone:\nthe valley stays open",
-            fontsize=8.5, color=INK, bbox=halo)
+            fontsize=8, color=INK, bbox=halo)
     ax.annotate("strain adds the\namplitude equation", xy=(0.60, -0.80),
-                xytext=(0.72, -1.36), fontsize=8.5, color=BLUE, bbox=halo,
+                xytext=(0.72, -1.36), fontsize=8, color=BLUE, bbox=halo,
                 arrowprops=dict(arrowstyle="->", color=BLUE, lw=1.1))
-    ax.set_xlabel(r"$\log_{10} E^{*}$  (GPa)", fontsize=9)
-    ax.set_ylabel("clamp position (km)", fontsize=9)
+    ax.set_xlabel(r"$\log_{10} E^{*}$  (GPa)", fontsize=8)
+    ax.set_ylabel("clamp position (km)", fontsize=8)
     ax.tick_params(labelsize=8)
 
 
 def main():
-    fig = plt.figure(figsize=(12.6, 8.6), dpi=150)
+    grl_style.apply()
+    # Authored at print size; see method_schematic.py.
+    fig = plt.figure(figsize=grl_style.figsize(grl_style.TWO_COL_MM, 0.70))
     fig.patch.set_facecolor("white")
 
     # No panel lettering or headers: added in the slide or manuscript,

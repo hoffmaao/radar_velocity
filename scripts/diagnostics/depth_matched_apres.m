@@ -257,7 +257,7 @@ P = []; D = []; W = []; along = []; lat = []; lon = []; Nblk = 0;
 for q = 1:numel(f)
   tok = regexp(f(q).name, '_vvel_(\d+)_(\d+)\.mat$', 'tokens','once');
   o = load(fullfile(net_dir, f(q).name));
-  if isfield(o,'coalign_applied') && ~o.coalign_applied, continue; end
+  if ~vdef.pairAligned(o), continue; end
   if max(abs(o.baseline_y)) > MAX_BASELINE, continue; end
   if Nblk == 0
     Nblk = numel(o.S1); along = o.Along_track(:);

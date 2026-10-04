@@ -117,7 +117,7 @@ for q = 1:numel(f)
     'tokens','once');
   if isempty(tok), continue; end
   o = load(fullfile(vdir, f(q).name));
-  if isfield(o,'coalign_applied') && ~o.coalign_applied, continue; end
+  if ~vdef.pairAligned(o), continue; end
   if max(abs(o.baseline_y)) > MAX_BASELINE, continue; end
   Nblk = numel(o.S1); sv = nan(Nblk,1);
   for b = 1:Nblk

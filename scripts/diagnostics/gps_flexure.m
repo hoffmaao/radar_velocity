@@ -22,7 +22,7 @@
 
 mp_dir = '/cresis/dataproducts/opr_data/accum/2022_Antarctica_Ground/CSARP_multipass';
 BLOCK  = 200;
-names  = {'EAGER_2022','EAGER_2022_GL1','EAGER_2022_GL2','EAGER_2022_GL3','EAGER_2022_GL4'};
+names  = vdef.surveyLines();  % four lines; EAGER_2022 duplicates GL1
 
 for n = 1:numel(names)
   pn = names{n};
