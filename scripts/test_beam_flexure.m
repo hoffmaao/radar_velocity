@@ -160,15 +160,27 @@ fprintf('   rms %.4f, chi2red %.2f, %.1f flexural lengths of pad, %d local minim
 assert(R.interior, 'the minimum ran to a grid edge');
 assert(abs(log(R.E/E_true)) < log(1.15), ...
   'E* off by %.0f%%', 100*(R.E/E_true - 1));
-% Two formal sigmas, not one. The reported interval IS one sigma, so a
-% one-sigma coverage check on a single fixed noise realisation is a coin
-% flip dressed up as an assertion - it would fail about a third of the time
-% for a perfectly correct inversion.
-nsig = abs(log(R.E/E_true)) / log(R.E_hi/R.E);
-fprintf('   truth is %.1f formal sigma from the fit\n', nsig);
-assert(nsig < 2, ...
-  'the truth %.2f GPa is %.1f formal sigma from the fitted %.2f GPa', ...
-  E_true/1e9, nsig, R.E/1e9);
+% Coverage over several noise draws, not a sigma count on one. For an
+% honest interval the profiled misfit at the truth, above the refined
+% minimum and in units of s2, is chi-squared with one degree of freedom, so
+% any single draw lands beyond two sigma one time in twenty-two. The MEAN
+% over NDRAW draws (the first is wo) is 1 with sd sqrt(2/NDRAW); 2.5 is
+% three of those above it, and an interval sqrt(2.5) too narrow, or a bias
+% of a formal sigma, fails. The truth sits on a node of this grid so its
+% profiled misfit is read exactly rather than interpolated.
+NDRAW = 8;
+co = iopts; co.E_grid = E_true * 10.^((-20:20)*0.05);
+dJ4 = zeros(1, NDRAW);
+for q = 1:NDRAW
+  if q == 1, wq = wo; else, wq = W + sig*randn(size(W)); end
+  Rq = vdef.invertElasticModulus(xo, wq, co);
+  dJ4(q) = (Rq.J_profile(21) - Rq.chi2red*Rq.dof) / Rq.s2;
+end
+fprintf('   truth at delta-chi2 %s over %d draws (mean %.2f, expect 1)\n', ...
+  sprintf('%.2f ', dJ4), NDRAW, mean(dJ4));
+assert(mean(dJ4) < 2.5, ...
+  'the truth sits at a mean delta-chi2 of %.2f over %d draws - the interval is too narrow or the fit biased', ...
+  mean(dJ4), NDRAW);
 assert(abs(R.x0 - x0_true) < 500, 'x0 off by %.0f m', R.x0 - x0_true);
 assert(R.chi2red < 2.5, 'reduced chi-squared %.2f - the model does not fit', R.chi2red);
 assert(R.n_local_min == 1, ...
@@ -360,10 +372,24 @@ fprintf(['11. partial window joint: E* = %.2f GPa [%.2f, %.2f], x0 = %.0f m; ' .
   Rpj.E/1e9, Rpj.E_lo/1e9, Rpj.E_hi/1e9, Rpj.x0, span_joint, span_part);
 nsig_pj = abs(log(Rpj.E/E_true)) / log(Rpj.E_hi/Rpj.E);
 assert(nsig_pj < 2, 'joint partial-window truth at %.1f sigma', nsig_pj);
-assert(span_joint < 0.6*span_part, ...
-  ['the strain data did not tighten the partial window (%.2f vs %.2f ' ...
-   'decades) - the amplitude constraint is not reaching the fit'], ...
-  span_joint, span_part);
+% The tightening is compared on NOISE-FREE data with the same sigmas. The
+% misfit is then zero at the truth, s2 floors at one, and each interval is
+% the delta-chi2 = 1 width the sigmas imply - the information each dataset
+% carries, with nothing left to the draw. The noisy spans above scatter by
+% a third either way about that and are printed, not asserted.
+pj0 = struct('h', h_true, 'sigma', sig_p*ones(size(wp)), ...
+             'E_grid', logspace(log10(0.2e9), log10(20e9), 41), 'x0_grid', -6000:250:0);
+Rp0 = vdef.invertElasticModulus(xp, Wp, pj0);
+pj0.strain = struct('x', xp, 'y', amp_p*K2*wpp_p, ...
+                    'sigma', sig_s*ones(size(dstr_p)), 'ref_depth', ZR);
+Rpj0 = vdef.invertElasticModulus(xp, Wp, pj0);
+span_p0 = log10(Rp0.E_hi/Rp0.E_lo); span_j0 = log10(Rpj0.E_hi/Rpj0.E_lo);
+fprintf('    noise-free: interval %.3f decades joint vs %.3f shape-only (ratio %.2f)\n', ...
+  span_j0, span_p0, span_j0/span_p0);
+assert(span_j0 < 0.7*span_p0, ...
+  ['the strain data did not tighten the partial window (%.3f vs %.3f ' ...
+   'decades, noise-free) - the amplitude constraint is not reaching the fit'], ...
+  span_j0, span_p0);
 
 %% 12. Local E* is honest about where it is resolved
 % The E_patch mode, on the full-window joint data of check 10. The clamp

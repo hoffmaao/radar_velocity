@@ -143,7 +143,15 @@ assert(isequal(size(R7t.a_t_sd), [nz nb]) && all(isfinite(R7t.a_t_sd(:))), 'a_t_
 
 %% 8. A tide-correlated trend leaks into a; opts.dt removes it
 v_true = 1.0e-3;                                              % m per day, firn-compaction scale
-dt8 = abs(1.5 + 0.8*dtide + 0.6*randn(1, np));                % days, r ~ 0.6 with dtide, as on the lines
+% days: the tide-correlated part is built in rather than drawn. Bounded
+% noise is made orthogonal to dtide and scaled, so for any draw the leak
+% slope is exactly 0.8 and r exactly 0.6, as on the lines; |noise| stays
+% near 1.1 (uniform at sd 0.8 std(dtide) sqrt(1/0.6^2 - 1)), so dt > 0.
+d8 = dtide - mean(dtide);
+n8 = rand(1, np) - 0.5; n8 = n8 - mean(n8);
+n8 = n8 - (n8*d8.')/(d8*d8.') * d8;
+n8 = n8 * (0.8*std(d8)*sqrt(1/0.6^2 - 1) / std(n8));
+dt8 = 2.5 + 0.8*dtide + n8;
 c8 = corrcoef(dt8, dtide); r8 = c8(1,2);
 cxy = mean((dt8 - mean(dt8)) .* (dtide - mean(dtide))); vxx = mean((dtide - mean(dtide)).^2);
 bias_pred = v_true * cxy / vxx;
@@ -159,8 +167,13 @@ fprintf(['8. trend leak: corr(dt, dtide) %.2f (reported %.2f); 1-D bias %.2f mm/
 assert(abs(r8) > 0.5 && abs(bias_pred) > 0.5e-3, 'test setup: the trend must be correlated enough to leak');
 assert(abs(R8.r_tt - r8) < 1e-9, 'r_tt not reported');
 assert(abs(bias_1d - bias_pred) < 0.35*abs(bias_pred), '1-D bias %.2f mm/m, predicted %.2f', 1e3*bias_1d, 1e3*bias_pred);
-assert(max(abs(e_t(:))) < 0.4e-3 && max(abs(e_t(:))) < 0.5*abs(bias_pred), ...
-  'trend-controlled a not recovered (%.3f mm/m against a %.2f mm/m leak)', 1e3*max(abs(e_t(:))), 1e3*bias_pred);
+% bounds from the realised design, as in check 10: least-squares sigma of a
+% with the trend free, plus half a grid step; and the leak itself is gone
+Xc8 = [dtide; dt8] - mean([dtide; dt8], 2); sg8 = sig_ph/abs(kz(1)) * sqrt(diag(inv(Xc8*Xc8.')));
+assert(max(abs(e_t(:))) < 4.5*sg8(1) + step/2, ...
+  'trend-controlled a not recovered (max err %.3f mm/m, %.1f sigma)', 1e3*max(abs(e_t(:))), max(abs(e_t(:)))/sg8(1));
+assert(abs(median(e_t(:))) < 0.25*abs(bias_pred), ...
+  'trend-controlled a still carries the leak (median err %.3f mm/m against %.2f)', 1e3*median(e_t(:)), 1e3*bias_pred);
 assert(median(abs(e_v(:))) < 0.3e-3, 'rate not recovered (%.3f mm/day)', 1e3*median(abs(e_v(:))));
 
 %% 9. The base tracker follows a base that leaves any fixed search window
